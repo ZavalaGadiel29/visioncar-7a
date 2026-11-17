@@ -1,0 +1,7 @@
+# Visión por computadora (versión con ventanas, necesaria para los trackbars)
+opencv-python>=4.8
+numpy>=1.24
+# YOLO (instala también PyTorch para CPU)
+ultralytics>=8.3
+# Gráficas opcionales de analizar_metricas.py
+matplotlib>=3.7

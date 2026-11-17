@@ -1,0 +1,89 @@
+{
+  "auto": {
+    "ip": "192.168.4.1",
+    "puerto_udp": 4210,
+    "puerto_stream": 81,
+    "ruta_stream": "/stream"
+  },
+  "video": {
+    "indice_webcam": 0,
+    "ancho": 320,
+    "alto": 240,
+    "max_antiguedad_cuadro_s": 1.0,
+    "espera_reconexion_s": 2.0,
+    "timeout_conexion_ms": 3000
+  },
+  "yolo": {
+    "modelo": "yolov8n.pt",
+    "imgsz": 320,
+    "confianza": 0.5,
+    "cada_n_cuadros": 2,
+    "clases_persona": ["person"],
+    "clases_senal_alto": ["stop sign"],
+    "clases_semaforo": ["traffic light"],
+    "clases_obstaculo": ["bottle", "cup", "chair", "car", "backpack", "suitcase", "potted plant", "teddy bear", "sports ball", "book", "bench", "dog", "cat"]
+  },
+  "zonas": {
+    "limite_izq": 0.33,
+    "limite_der": 0.66
+  },
+  "semaforo": {
+    "rojo1_bajo": [0, 100, 100],
+    "rojo1_alto": [10, 255, 255],
+    "rojo2_bajo": [160, 100, 100],
+    "rojo2_alto": [179, 255, 255],
+    "verde_bajo": [40, 70, 70],
+    "verde_alto": [90, 255, 255],
+    "proporcion_minima": 0.04
+  },
+  "opencv_obstaculos": {
+    "activado": true,
+    "metodo": "canny",
+    "roi_inicio_y": 0.6,
+    "desenfoque_kernel": 5,
+    "canny_bajo": 50,
+    "canny_alto": 150,
+    "iteraciones_dilatacion": 2,
+    "area_minima_contorno": 120,
+    "umbral_ocupacion_zona": 0.15
+  },
+  "calidad_imagen": {
+    "brillo_minimo": 40,
+    "nitidez_minima": 25
+  },
+  "decision": {
+    "area_persona_minima": 0.0,
+    "area_persona_grande": 0.15,
+    "area_senal_alto_cercana": 0.02,
+    "tiempo_alto_s": 3.0,
+    "tiempo_ignorar_alto_s": 5.0,
+    "area_semaforo_minima": 0.0,
+    "area_obstaculo_zona": 0.03,
+    "area_obstaculo_muy_cercano": 0.30,
+    "tiempo_retroceso_s": 0.8,
+    "girar_por_obstaculo_lateral": true,
+    "giro_preferido": "GIRAR_IZQ",
+    "confirmaciones_k": 3
+  },
+  "velocidades": {
+    "AVANZAR": 180,
+    "GIRAR_IZQ": 170,
+    "GIRAR_DER": 170,
+    "RETROCEDER": 160,
+    "DETENER": 0
+  },
+  "comunicacion": {
+    "intervalo_envio_s": 0.1,
+    "tiempo_max_espera_ack_s": 1.0,
+    "repeticiones_detener_al_salir": 5,
+    "muestras_promedio_latencia": 20
+  },
+  "interfaz": {
+    "escala_video": 2,
+    "ancho_panel": 300
+  },
+  "registro": {
+    "activado": true,
+    "carpeta": "registros"
+  }
+}

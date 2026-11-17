@@ -1,0 +1,4 @@
+# Dependencias extra solo para correr las pruebas en tu computadora
+-r requirements.txt
+pytest>=8.0
+httpx>=0.27

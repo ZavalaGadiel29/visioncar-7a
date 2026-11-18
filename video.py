@@ -9,6 +9,10 @@ acumulando en un búfer y procesaríamos imágenes viejas (retraso).
 Con un hilo dedicado, el lector descarta lo viejo y siempre guarda SOLO
 el cuadro más reciente, junto con la hora en que llegó. Así el agente
 puede saber qué tan "antiguo" es lo que está viendo.
+
+Fuentes posibles: stream del carrito (URL), webcam (índice) o un archivo
+de video grabado (--video archivo.mp4). El archivo se reproduce a su
+velocidad real y vuelve a empezar al terminar.
 """
 
 import sys
@@ -19,14 +23,17 @@ import cv2
 
 
 class LectorVideo:
-    def __init__(self, fuente, es_webcam, cfg_video):
+    def __init__(self, fuente, es_webcam, cfg_video, es_archivo=False):
         """
-        fuente:    índice de la webcam (int) o URL del stream (str).
-        es_webcam: True si la fuente es una webcam USB.
-        cfg_video: sección "video" del config.json.
+        fuente:     índice de la webcam (int), URL del stream o ruta de un video (str).
+        es_webcam:  True si la fuente es una webcam USB.
+        es_archivo: True si la fuente es un archivo de video grabado.
+        cfg_video:  sección "video" del config.json.
         """
         self.fuente = fuente
         self.es_webcam = es_webcam
+        self.es_archivo = es_archivo
+        self._pausa_archivo = 0.0        # segundos entre cuadros del archivo
         self.cfg = cfg_video
 
         self._captura = None
@@ -65,6 +72,11 @@ class LectorVideo:
     # Apertura de la fuente
     # ------------------------------------------------------------------
     def _abrir(self):
+        if self.es_archivo:
+            captura = cv2.VideoCapture(self.fuente)
+            fps = captura.get(cv2.CAP_PROP_FPS) or 0
+            self._pausa_archivo = 1.0 / fps if 1 <= fps <= 120 else 1.0 / 30
+            return captura
         if self.es_webcam:
             # En Windows, DirectShow abre la webcam mucho más rápido.
             if sys.platform.startswith("win"):
@@ -111,7 +123,12 @@ class LectorVideo:
                 print("[VIDEO] Conectado.")
 
             # 2) Leer un cuadro
+            inicio_lectura = time.monotonic()
             exito, cuadro = self._captura.read()
+            if self.es_archivo and (not exito or cuadro is None):
+                # Fin del archivo: volver al inicio
+                self._captura.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                exito, cuadro = self._captura.read()
             if not exito or cuadro is None:
                 print("[VIDEO] Se perdió el video. Reconectando...")
                 self._conectado = False
@@ -132,6 +149,12 @@ class LectorVideo:
                 self._contador += 1
                 self._conectado = True
                 self._condicion.notify_all()
+
+            # 5) Con un archivo, esperar para ir a su velocidad real
+            if self.es_archivo:
+                resto = self._pausa_archivo - (time.monotonic() - inicio_lectura)
+                if resto > 0:
+                    time.sleep(resto)
 
     # ------------------------------------------------------------------
     # Lo que usa el programa principal

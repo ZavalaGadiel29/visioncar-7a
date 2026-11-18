@@ -10,11 +10,11 @@ import os
 from datetime import datetime
 
 COLUMNAS = [
-    "tiempo_s", "fps", "latencia_ms", "accion", "motivo", "regla", "estado",
-    "emergencia", "pausado", "video_ok", "brillo", "nitidez", "semaforo",
-    "yolo_ejecutado", "num_detecciones", "detecciones",
-    "ocup_izq", "ocup_centro", "ocup_der",
-    "zona_izq", "zona_centro", "zona_der",
+    "tiempo_s", "fps", "latencia_ms", "estado", "comando", "accion_nube", "modo",
+    "motivo", "regla", "senal", "confianza", "senal_vista", "conf_vista",
+    "carril_ok", "error_carril", "emergencia", "video_ok", "brillo", "nitidez",
+    "yolo_ejecutado", "senales_ejecutado", "num_detecciones", "detecciones",
+    "zona_izq", "zona_centro", "zona_der", "nube_ok", "pendientes",
 ]
 
 

@@ -1,0 +1,7 @@
+Copia aquí el modelo de señales entrenado con el nombre best.pt
+(clases: alto, avanzar, izquierda, derecha).
+
+Mientras no exista modelo/best.pt el programa funciona igual:
+sigue el carril, detecta personas y obstáculos y registra senal "ninguna".
+Si tus clases se llaman distinto (p. ej. "stop", "left"), tradúcelas en
+config.json -> senales -> clases, por ejemplo: "stop": "alto".

@@ -5,7 +5,8 @@ Lee el CSV de un recorrido y muestra un resumen para el reporte:
   - duración, FPS promedio / mínimo / máximo
   - latencia promedio / mínima / máxima
   - cuántas veces se eligió cada acción (y su porcentaje)
-  - cuántas veces se activó cada regla
+  - cuántas veces se activó cada regla y cuántos cuadros en cada estado
+  - señales registradas, % de cuadros con carril detectado y error promedio
   - cuántas detecciones hubo por clase
 
 Uso:
@@ -91,10 +92,11 @@ def guardar_graficas(filas, ruta_csv):
     figura.tight_layout()
     figura.savefig(base + "_rendimiento.png", dpi=120)
 
-    acciones = Counter(f["accion"] for f in filas)
-    figura2, eje = plt.subplots(figsize=(7, 4))
-    eje.bar(list(acciones.keys()), list(acciones.values()))
-    eje.set_title("Cantidad de cuadros por acción")
+    estados = Counter(f["estado"] for f in filas)
+    figura2, eje = plt.subplots(figsize=(8, 4))
+    eje.bar(list(estados.keys()), list(estados.values()))
+    eje.set_title("Cantidad de cuadros por estado")
+    eje.tick_params(axis="x", labelrotation=30)
     eje.set_ylabel("Cuadros")
     figura2.tight_layout()
     figura2.savefig(base + "_acciones.png", dpi=120)
@@ -130,29 +132,41 @@ def main():
     sin_video = sum(1 for f in filas if f["video_ok"] == "0")
     print(f"  Cuadros sin video: {sin_video}")
 
-    imprimir_conteo("Acciones (cuadros):", Counter(f["accion"] for f in filas), total)
+    imprimir_conteo("Estados (cuadros):", Counter(f["estado"] for f in filas), total)
+    imprimir_conteo("Acciones enviadas a la nube (cuadros):", Counter(f["accion_nube"] for f in filas), total)
     imprimir_conteo("Reglas que decidieron:", Counter(f"Regla {f['regla']}" for f in filas), total)
+    imprimir_conteo("Señales registradas (cuadros):", Counter(f["senal"] for f in filas), total)
 
-    # Cambios de acción: cuántas veces el auto cambió de una acción a otra
-    cambios = sum(1 for a, b in zip(filas, filas[1:]) if a["accion"] != b["accion"])
-    print(f"\nCambios de acción durante el recorrido: {cambios}")
+    # Cambios de estado: cuántas veces cambió la máquina de estados
+    cambios = sum(1 for a, b in zip(filas, filas[1:]) if a["estado"] != b["estado"])
+    print(f"\nCambios de estado durante el recorrido: {cambios}")
 
-    # Detecciones por clase (solo en cuadros donde YOLO realmente se ejecutó)
+    # Carril
+    con_video = [f for f in filas if f["video_ok"] == "1"]
+    con_carril = [f for f in con_video if f["carril_ok"] == "1"]
+    if con_video:
+        print(f"Carril detectado en {100.0 * len(con_carril) / len(con_video):.1f} % de los cuadros con video")
+    errores = [abs(float(f["error_carril"])) for f in con_carril if f["error_carril"]]
+    if errores:
+        print(f"Error de carril |promedio|: {sum(errores) / len(errores):.3f}  (0 = centrado, 1 = en el borde)")
+
+    # Detecciones por clase (solo en cuadros donde algún modelo YOLO realmente se ejecutó)
     detecciones = Counter()
     cuadros_yolo = 0
     for f in filas:
-        if f["yolo_ejecutado"] != "1":
+        if f["yolo_ejecutado"] != "1" and f["senales_ejecutado"] != "1":
             continue
         cuadros_yolo += 1
         if f["detecciones"]:
             for item in f["detecciones"].split("|"):
                 detecciones[item.split(":")[0]] += 1
-    print(f"\nCuadros en los que se ejecutó YOLO: {cuadros_yolo}")
+    print(f"\nCuadros en los que se ejecutó algún modelo YOLO: {cuadros_yolo}")
     total_det = sum(detecciones.values())
     imprimir_conteo("Detecciones por clase:", detecciones, total_det)
 
-    semaforos = Counter(f["semaforo"] for f in filas if f["semaforo"] not in ("NINGUNO", ""))
-    imprimir_conteo("Colores de semáforo vistos (cuadros):", semaforos, sum(semaforos.values()))
+    pendientes = a_numeros(filas, "pendientes")
+    if pendientes:
+        print(f"Máximo de eventos pendientes de subir a la nube: {max(pendientes):.0f}")
     print()
 
     if args.graficas:

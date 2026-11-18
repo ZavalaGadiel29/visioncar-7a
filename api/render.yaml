@@ -1,0 +1,35 @@
+# Blueprint de Render para la API de VisionCar.
+# El repositorio es la carpeta CARRITO completa; la API vive en api/ (rootDir).
+# Los tokens se generan solos en Render (generateValue) y se ven en la
+# pestaña "Environment" del servicio. Nada secreto se escribe aquí.
+services:
+  - type: web
+    name: visioncar-api
+    runtime: python
+    plan: free
+    rootDir: api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:crear_app --factory --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: MODO_DEMO
+        value: "1"            # cambia a "0" cuando configures MONGODB_URI
+      - key: DEMO_EVENTOS_INICIALES
+        value: "100"
+      - key: TOKEN_CARRITO
+        generateValue: true
+      - key: TOKEN_LECTURA
+        generateValue: true
+      - key: TOKEN_APP
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false           # Render la pide al crear el servicio; puedes dejarla vacía en modo demo
+      - key: MONGODB_BASE
+        value: visioncar
+      - key: CORS_ORIGENES
+        value: "*"
+      - key: ZONA_HORARIA
+        value: America/Mexico_City

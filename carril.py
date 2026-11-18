@@ -88,6 +88,7 @@ class ResultadoCarril:
     centro_x: float = 0.0              # en píxeles de la imagen
     x_izq: float = None                # límite izquierdo del carril (fila más baja)
     x_der: float = None                # límite derecho del carril (fila más baja)
+    ancho_carril: float = 0.0          # ancho aprendido del carril (px)
     franjas_validas: int = 0
     y_inicio_roi: int = 0
     puntos: list = field(default_factory=list)   # (y, x_izq, x_der, centro) por franja, para dibujar
@@ -144,18 +145,7 @@ class DetectorCarril:
             col_borde = np.flatnonzero((borde[ya:yb] > 0).sum(axis=0) >= minimo)
             col_amarilla = np.flatnonzero((amarilla[ya:yb] > 0).sum(axis=0) >= minimo)
 
-            # Qué máscara forma cada lado según el carril objetivo
-            if objetivo == "derecho":
-                lado_izq, lado_der = col_amarilla, col_borde
-            elif objetivo == "izquierdo":
-                lado_izq, lado_der = col_borde, col_amarilla
-            else:
-                lado_izq, lado_der = col_borde, col_borde
-
-            izq = lado_izq[lado_izq < referencia]
-            der = lado_der[lado_der > referencia]
-            x_izq = float(izq.max()) if izq.size else None     # la más cercana al centro
-            x_der = float(der.min()) if der.size else None
+            x_izq, x_der = self._buscar_limites(objetivo, col_borde, col_amarilla, referencia)
 
             if x_izq is not None and x_der is not None:
                 medido = x_der - x_izq
@@ -186,14 +176,51 @@ class DetectorCarril:
             resultado.descripcion = f"carril perdido ({resultado.franjas_validas} franjas)"
             return resultado
 
-        centro = float(np.average(centros, weights=pesos))
+        centro = float(np.clip(np.average(centros, weights=pesos), 0, ancho))
         self._centro_previo = centro
         medio = ancho / 2.0
         resultado.detectado = True
         resultado.centro_x = centro
+        resultado.ancho_carril = float(self._ancho_carril)
         resultado.error = float(np.clip((centro - ancho * cfg["centro_objetivo"]) / medio, -1.0, 1.0))
         resultado.descripcion = f"carril OK ({resultado.franjas_validas} franjas)"
         return resultado
+
+    @staticmethod
+    def _buscar_limites(objetivo, col_borde, col_amarilla, referencia):
+        """
+        Devuelve (x_izq, x_der) del carril en una franja (None si no se ve ese lado).
+
+        - "derecho":   la línea amarilla más cercana al centro anterior es el
+                       límite izquierdo; el borde blanco más cercano A SU DERECHA
+                       es el límite derecho.
+        - "izquierdo": igual, pero el borde blanco se busca a la izquierda.
+        - "completo":  bordes blancos más cercanos a cada lado del centro anterior.
+        Si no hay amarilla en la franja (la línea es discontinua), se usa solo
+        el borde blanco del lado que corresponde.
+        """
+        def mas_cercana(columnas, maximo=None, minimo=None):
+            """Columna más cercana al punto de búsqueda (el límite dado o la referencia)."""
+            punto = referencia
+            if maximo is not None:
+                columnas, punto = columnas[columnas < maximo], maximo
+            if minimo is not None:
+                columnas, punto = columnas[columnas > minimo], minimo
+            if not columnas.size:
+                return None
+            return float(columnas[np.argmin(np.abs(columnas - punto))])
+
+        if objetivo in ("derecho", "izquierdo"):
+            amarilla = mas_cercana(col_amarilla)
+            if objetivo == "derecho":
+                if amarilla is not None:
+                    return amarilla, mas_cercana(col_borde, minimo=amarilla)
+                return None, mas_cercana(col_borde, minimo=referencia)
+            if amarilla is not None:
+                return mas_cercana(col_borde, maximo=amarilla), amarilla
+            return mas_cercana(col_borde, maximo=referencia), None
+
+        return mas_cercana(col_borde, maximo=referencia), mas_cercana(col_borde, minimo=referencia)
 
 
 # ======================================================================

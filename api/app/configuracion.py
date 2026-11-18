@@ -32,6 +32,7 @@ class Configuracion:
     tamano_maximo_bytes: int = 512 * 1024
     segundos_vigencia_manual: float = 2.0
     zona_horaria: str = "America/Mexico_City"
+    demo_eventos_iniciales: int = 0
 
     def validar(self) -> None:
         """Revisa que la configuración tenga sentido antes de arrancar."""
@@ -71,6 +72,7 @@ def cargar_configuracion() -> Configuracion:
         tamano_maximo_bytes=int(os.getenv("TAMANO_MAXIMO_BYTES", str(512 * 1024))),
         segundos_vigencia_manual=float(os.getenv("SEGUNDOS_VIGENCIA_MANUAL", "2")),
         zona_horaria=os.getenv("ZONA_HORARIA", "America/Mexico_City").strip(),
+        demo_eventos_iniciales=int(os.getenv("DEMO_EVENTOS_INICIALES", "100")),
     )
     config.validar()
     return config

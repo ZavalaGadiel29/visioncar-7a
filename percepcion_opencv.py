@@ -96,8 +96,10 @@ def analizar_obstaculos(cuadro, cfg_obs, cfg_zonas, cfg_carril=None):
     else:
         binaria = cv2.Canny(suave, int(cfg_obs["canny_bajo"]), int(cfg_obs["canny_alto"]))
 
-    # 4. Borrar las líneas del carril (engrosadas un poco) y dilatar
+    # 4. Borrar las líneas del carril (para que sus bordes, sobre todo en
+    #    curvas, no parezcan obstáculos) y dilatar para unir pedazos sueltos
     nucleo = np.ones((3, 3), np.uint8)
+    lineas = None
     if cfg_carril is not None:
         borde, amarilla = mascaras_lineas(roi, cfg_carril, solo_color=True)
         lineas = cv2.dilate(cv2.bitwise_or(borde, amarilla), nucleo,
@@ -105,12 +107,17 @@ def analizar_obstaculos(cuadro, cfg_obs, cfg_zonas, cfg_carril=None):
         binaria = cv2.bitwise_and(binaria, cv2.bitwise_not(lineas))
     binaria = cv2.dilate(binaria, nucleo, iterations=int(cfg_obs["iteraciones_dilatacion"]))
 
-    # 5. Contornos: rellenar solo los suficientemente grandes
+    # 5. Contornos: se rellena la ENVOLVENTE CONVEXA de los suficientemente
+    #    grandes. Así también se rellena un objeto cuyo contorno quedó
+    #    abierto (por ejemplo, cuando tapa una línea del carril).
     contornos, _ = cv2.findContours(binaria, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     mascara = np.zeros_like(binaria)
     for contorno in contornos:
-        if cv2.contourArea(contorno) >= cfg_obs["area_minima_contorno"]:
-            cv2.drawContours(mascara, [contorno], -1, 255, thickness=cv2.FILLED)
+        casco = cv2.convexHull(contorno)
+        if cv2.contourArea(casco) >= cfg_obs["area_minima_contorno"]:
+            cv2.drawContours(mascara, [casco], -1, 255, thickness=cv2.FILLED)
+    if lineas is not None:
+        mascara = cv2.bitwise_and(mascara, cv2.bitwise_not(lineas))
     resultado.mascara = mascara
 
     # 6. Ocupación por zona (mismos límites que usan las zonas de YOLO)

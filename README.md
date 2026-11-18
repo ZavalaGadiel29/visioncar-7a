@@ -1,55 +1,65 @@
-# Vehículo autónomo a escala: programa de la laptop
+# VisionCar: carrito autónomo (programa de la laptop)
 
-Un agente inteligente con el ciclo **Percibir → Razonar → Actuar**.
-La ESP32-CAM transmite video y obedece comandos. **Todas las decisiones se toman en la laptop.**
+El carrito recorre solo una pista con carril (fondo oscuro, bordes blancos y línea central amarilla discontinua). El programa:
+
+- sigue el carril,
+- obedece 4 señales (alto, avanzar, izquierda y derecha),
+- se detiene ante peatones,
+- esquiva obstáculos o retrocede si los tiene muy cerca,
+- y registra cada decisión en la nube (API de la carpeta `api/`).
+
+Todas las decisiones se toman en la laptop. La ESP32-CAM transmite el video y obedece los comandos.
 
 ```
- ESP32-CAM ──video MJPEG──►  LAPTOP  ──UDP "SEQ;COMANDO;VEL"──►  ESP32-CAM ──► L298N ──► motores
-                              │  1. PERCIBIR  (YOLO + OpenCV)
-                              │  2. RAZONAR   (reglas de prioridad + estados)
-                              │  3. ACTUAR    (cliente UDP cada 100 ms)
- ESP32-CAM ◄────────────────── "ACK;SEQ" / "ERR;SEQ"  (se usa para medir latencia)
+ ESP32-CAM ──video MJPEG──►  LAPTOP  ──UDP "CLAVE;SEQ;COMANDO;P1;P2"──►  carrito (firmware v2)
+                              │  1. PERCIBIR  YOLO (personas/obstáculos) + modelo de señales + carril + OpenCV
+                              │  2. RAZONAR   máquina de estados con prioridades
+                              │  3. ACTUAR    comando UDP cada 100 ms
+                              │  4. NUBE      eventos ──HTTPS──► API  ◄── control manual (app)
+ carrito  ───────────────────► "ACK;SEQ"  (sirve para medir la latencia)
 ```
 
 ---
 
-## 1. Estructura de archivos
+## 1. Archivos
 
 | Archivo | Etapa | Qué hace |
 |---|---|---|
 | `main.py` | — | Programa principal: une todos los módulos en el ciclo del agente |
-| `video.py` | Percibir | Lee video en un hilo y siempre entrega el cuadro más reciente |
-| `percepcion_yolo.py` | Percibir | YOLO: clase, confianza, centro, zona y área de cada objeto |
-| `percepcion_opencv.py` | Percibir | Color del semáforo (HSV), obstáculos por bordes, calidad de imagen |
-| `decision.py` | Razonar | **Reglas de prioridad, máquina de estados y filtro anti-titubeo** |
-| `comunicacion.py` | Actuar | Cliente UDP: envía comandos, recibe ACK y mide la latencia |
-| `interfaz.py` | — | Dibuja video y panel, más las ventanas de calibración |
-| `registro.py` | — | Guarda el CSV de métricas de cada recorrido |
+| `video.py` | Percibir | Lee el video en un hilo y siempre entrega el cuadro más reciente (stream, webcam o archivo) |
+| `percepcion_yolo.py` | Percibir | YOLO COCO (personas y obstáculos) y modelo propio de señales (`modelo/best.pt`) |
+| `carril.py` | Percibir | **Detección del carril** (HSV + Canny) y **control PD** de las ruedas |
+| `percepcion_opencv.py` | Percibir | Calidad de imagen y obstáculos por bordes (sin contar las líneas del carril) |
+| `decision.py` | Razonar | **Máquina de estados** con reglas de prioridad |
+| `comunicacion.py` | Actuar | Cliente UDP del protocolo v2, ACK, latencia y vigilante |
+| `nube.py` | Nube | Envía eventos a la API (cola + `pendientes.jsonl`) y consulta el control manual |
+| `interfaz.py` | — | Pantalla y ventanas de calibración |
+| `registro.py` | — | CSV de métricas de cada recorrido |
+| `analizar_metricas.py` | — | Resumen de un CSV para el reporte |
+| `prueba_10.py` | — | Registro de 10 pruebas por señal y porcentaje de éxito |
 | `configuracion.py` | — | Carga y guarda `config.json` |
-| `analizar_metricas.py` | — | Resume un CSV para el reporte (y genera gráficas opcionales) |
-| `config.json` | — | **Todos** los parámetros del sistema |
+| `config.json` | — | **Todos** los tiempos, umbrales y velocidades |
+| `modelo/best.pt` | — | Modelo de señales (cópialo aquí cuando esté entrenado) |
+| `.env` | — | Token de la API (**no se sube a git**) |
 
 ---
 
 ## 2. Instalación
 
-Requiere **Python 3.10 a 3.12** (recomendado, porque PyTorch/Ultralytics siempre dan soporte primero a esas versiones).
-No hace falta GPU: YOLO corre en CPU.
-
 ```bash
-# 1) Crear y activar un entorno virtual
 python -m venv venv
 venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux / Mac
-
-# 2) Instalar dependencias
 pip install -r requirements.txt
 ```
 
-La primera vez que se ejecute, Ultralytics descarga `yolov8n.pt` automáticamente (~6 MB).
-Para usar YOLO11, cambia `"modelo": "yolo11n.pt"` en `config.json`.
+La nube no necesita paquetes extra (usa la biblioteca estándar de Python).
 
-> En Windows, si el comando `python` abre la Microsoft Store, usa `py` en su lugar (`py -m venv venv`).
+**Token de la API:** copia `.env.example` como `.env` y pon el valor de `TOKEN_CARRITO`, el mismo que está configurado en la API (Render).
+La URL de la API está en `config.json → nube.api_url`. También se puede poner `API_URL=...` en `.env`.
+
+**Modelo de señales:** copia el archivo entrenado como `modelo/best.pt`, con las clases `alto`, `avanzar`, `izquierda` y `derecha`.
+Si tus clases tienen otros nombres, tradúcelas en `config.json → senales → clases`, por ejemplo `"stop": "alto"`.
+**Mientras no exista**, el programa funciona igual: muestra *"sin modelo de senales"*, sigue el carril, detecta personas y obstáculos y registra `senal: "ninguna"`. El modelo se carga al iniciar el programa, así que después de copiarlo solo hay que volver a ejecutarlo.
 
 ---
 
@@ -57,164 +67,170 @@ Para usar YOLO11, cambia `"modelo": "yolo11n.pt"` en `config.json`.
 
 | Comando | Para qué |
 |---|---|
-| `python main.py --webcam --sin-auto` | **Modo de prueba**: webcam, muestra todo y no envía comandos |
-| `python main.py --webcam --sin-auto --calibrar` | Igual, con las ventanas de calibración abiertas |
-| `python main.py --webcam --sin-auto --sin-yolo` | Solo OpenCV (útil si aún no se instala Ultralytics) |
-| `python main.py` | Auto real con la IP de `config.json` |
-| `python main.py --ip 192.168.1.50` | Auto real con otra IP |
-| `python main.py --sin-registro` | No guardar el CSV |
-| `python analizar_metricas.py` | Resumen del último recorrido |
-| `python analizar_metricas.py registros/recorrido_X.csv --graficas` | Resumen de un archivo concreto, con gráficas PNG |
+| `python main.py` | Carrito real (IP de `config.json`) con nube |
+| `python main.py --sin-nube` | Carrito real, sin internet |
+| `python main.py --webcam --sin-auto --sin-nube` | Prueba con la webcam, sin enviar comandos |
+| `python main.py --video pista.mp4 --sin-auto --sin-nube` | Prueba con una grabación (se repite al terminar) |
+| `python main.py --webcam --sin-auto --calibrar` | Abre las ventanas de calibración |
+| `python main.py --ip 172.20.10.5` | Usar otra IP del carrito |
+| `python main.py --sin-yolo` | Sin YOLO COCO (sin personas ni obstáculos por YOLO) |
+| `python analizar_metricas.py [--graficas]` | Resumen del último recorrido |
+| `python prueba_10.py` | Pruebas de 10 intentos por señal |
 
-La URL del video se arma así: `http://<ip>:<puerto_stream><ruta_stream>` → `http://192.168.4.1:81/stream`.
+Al arrancar, cada modelo YOLO hace una inferencia de "calentamiento" (unos segundos). Así el primer cuadro real no congela el ciclo.
 
-### Controles
+### Teclas
 
 | Tecla | Acción |
 |---|---|
-| **ESPACIO** | Activa/desactiva el **paro de emergencia** (DETENER inmediato) |
-| **P** | Pausa/reanuda el envío de comandos. Sirve para **probar el fail-safe**: el auto debe detenerse solo en 500 ms |
-| **C** | Abre/cierra las ventanas de calibración |
-| **G** | Guarda los valores actuales en `config.json` |
-| **Q** | Sale enviando DETENER varias veces |
+| **ESPACIO** | Paro de emergencia (activa/desactiva) |
+| **Q** | Salir enviando DETENER varias veces |
+| **P** | Pausar el envío UDP (prueba del fail-safe: el carrito debe frenar en 500 ms) |
+| **C** | Abrir/cerrar la calibración |
+| **G** | Guardar la configuración actual en `config.json` |
+
+### En pantalla
+
+El estado, el comando y su motivo, la señal vista con barra de confianza (y la señal confirmada), el carril detectado con barra de error, las tres zonas de obstáculos, la conexión a la nube y el modo de control, los eventos pendientes, los FPS, la latencia y los contadores UDP.
+Sobre el video se dibujan la región del carril (amarillo = límite izquierdo, blanco = límite derecho, verde = centro), las cajas de YOLO y las zonas.
 
 ---
 
-## 4. Cómo funciona
+## 4. Protocolo del carrito (firmware v2)
 
-### 4.1 Percibir
+`CLAVE;SEQ;COMANDO;P1;P2` por UDP al puerto 4210 de `172.20.10.3`, con la clave `visioncar7a`.
 
-1. **Video** (`video.py`): un hilo lee sin parar y guarda solo el último cuadro con su hora de llegada.
-   Si no hay cuadro, o el último tiene más de `max_antiguedad_cuadro_s` (1 s), el agente se detiene.
-2. **Calidad** (`evaluar_calidad`): brillo promedio bajo → *imagen muy oscura*. Varianza del Laplaciano baja → *imagen borrosa*. Las dos causan DETENER.
-3. **YOLO** (`percepcion_yolo.py`): por cada objeto calcula
-   - `cx` = centro horizontal / ancho (0 = izquierda, 1 = derecha)
-   - `zona` = IZQ si `cx < 0.33`, DER si `cx > 0.66`, CENTRO en otro caso
-   - `area` = área de la caja / área del cuadro → **mientras más grande, más cerca**
-   - Corre cada `cada_n_cuadros` cuadros; entre medias reutiliza el último resultado.
-4. **Semáforo** (`clasificar_semaforo`): recorta la caja de *traffic light*, pasa a HSV y cuenta píxeles rojos y verdes.
-   El rojo usa **dos rangos** porque en OpenCV el matiz va de 0 a 179 y el rojo está en los dos extremos.
-5. **Obstáculos sin YOLO** (`analizar_obstaculos`): región inferior → gris → desenfoque → Canny (o umbral Otsu) → dilatación → contornos rellenos.
-   Para cada zona se calcula el **porcentaje ocupado**; si supera `umbral_ocupacion_zona`, la zona está bloqueada.
+| Comando | Parámetros | Ejemplo |
+|---|---|---|
+| `AVANZAR`, `RETROCEDER`, `GIRAR_IZQ`, `GIRAR_DER` | vel 0-255 (0 = por defecto) | `visioncar7a;12;AVANZAR;160` |
+| `DETENER` | — | `visioncar7a;13;DETENER` |
+| `MOVER` | vel_izq, vel_der (-255 a 255) | `visioncar7a;14;MOVER;190;110` |
 
-### 4.2 Razonar (`decision.py`)
+- `SEQ` empieza en 1 y siempre aumenta. El carrito responde `ACK;SEQ`, y con eso se calcula la latencia de ida y vuelta.
+- El comando actual se **reenvía cada 100 ms** (el carrito se detiene solo si pasan 500 ms sin recibir nada).
+- **Vigilante:** si el ciclo de visión se traba más de `max_sin_decision_s` (0.5 s), el hilo UDP manda DETENER en lugar de repetir el último comando.
+- Si la clave está mal, el carrito no responde y en pantalla aparece *"Carrito no responde (IP o CLAVE?)"*.
+- Si tu firmware exige siempre P1 y P2, pon `"rellenar_parametros": true` y se mandará `DETENER;0;0`.
 
-**Reglas de prioridad**: la primera que se cumple decide la acción.
+---
 
-```mermaid
-flowchart TD
-    A[Percepción del cuadro] --> R1{"1. SEGURIDAD<br/>¿emergencia, sin video,<br/>imagen mala o persona<br/>en el centro o muy cerca?"}
-    R1 -- sí --> D1[DETENER inmediato]
-    R1 -- no --> R2{"2. SEÑALES<br/>¿ALTO cercano o<br/>semáforo ROJO?"}
-    R2 -- sí --> D2[DETENER]
-    R2 -- no --> R3{"3. ¿Obstáculo muy cerca<br/>o 3 zonas bloqueadas?"}
-    R3 -- sí --> D3[RETROCEDER un momento]
-    R3 -- no --> R4{"4. ¿Obstáculo en<br/>alguna zona?"}
-    R4 -- sí --> D4[GIRAR hacia la zona más libre]
-    R4 -- no --> D5[5. AVANZAR]
-    D2 & D3 & D4 & D5 --> F{"Filtro anti-titubeo<br/>¿se repitió K cuadros?"}
-    F -- sí --> OK[Acción confirmada]
-    F -- no --> PREV[Se mantiene la acción anterior]
-    D1 --> OK
-```
+## 5. Cómo decide
 
-**Máquina de estados** (para las acciones que duran un tiempo):
+### 5.1 Prioridades (la primera que se cumple gana)
+
+1. **Seguridad**, inmediata y sin confirmación: video perdido o con más de 1 s de antigüedad, imagen oscura o borrosa, paro de emergencia, persona en el carril → **DETENER**.
+2. **Modo manual** desde la app (vía la API) → obedecer la acción manual.
+3. **Señal confirmada** o maniobra en curso (alto, giros, avanzar).
+4. **Obstáculo muy cercano** o las tres zonas bloqueadas → retroceder y luego girar hacia la zona más libre.
+5. **Obstáculo en una zona** → girar hacia la zona más libre.
+6. **Seguir el carril** (control PD → `MOVER`).
+
+**Señal confirmada:** la misma clase aparece en **K de los últimos M** cuadros analizados (3 de 5), con confianza ≥ `umbral_confianza_senal` y con un área mayor que su `area_activacion`. El área de activación sirve para que la señal se obedezca cuando ya está cerca, no desde lejos.
+Las detecciones de más de `ventana_confirmacion_s` (1.5 s) ya no cuentan, y las señales que se están ignorando no se acumulan.
+
+**Persona en el carril:** su caja se cruza con el carril detectado (más un margen), o su área es mayor que `area_persona_grande`. Si no hay carril, se usa la zona central.
+
+### 5.2 Máquina de estados
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NORMAL
-    NORMAL --> ESPERANDO_ALTO: señal de ALTO cercana
-    ESPERANDO_ALTO --> NORMAL: pasaron tiempo_alto_s<br/>(luego ignora el ALTO tiempo_ignorar_alto_s)
-    NORMAL --> RETROCEDIENDO: obstáculo muy cerca<br/>o 3 zonas bloqueadas
-    RETROCEDIENDO --> NORMAL: pasaron tiempo_retroceso_s<br/>(vuelve a evaluar)
+    [*] --> SIGUIENDO_CARRIL
+    SIGUIENDO_CARRIL --> DETENIDO_POR_ALTO: ALTO confirmado
+    DETENIDO_POR_ALTO --> IGNORANDO_ALTO: pasan 3 s
+    IGNORANDO_ALTO --> SIGUIENDO_CARRIL: pasan 4 s
+    SIGUIENDO_CARRIL --> PREPARANDO_GIRO: IZQUIERDA/DERECHA confirmada
+    IGNORANDO_ALTO --> PREPARANDO_GIRO: IZQUIERDA/DERECHA confirmada
+    PREPARANDO_GIRO --> GIRANDO: tiempo/distancia de preparación
+    GIRANDO --> SIGUIENDO_CARRIL: duración cumplida o carril reencontrado (ignora giros 3 s)
+    SIGUIENDO_CARRIL --> RETROCEDIENDO: obstáculo muy cerca / 3 zonas bloqueadas
+    RETROCEDIENDO --> SIGUIENDO_CARRIL: retroceso + giro a la zona libre
+    SIGUIENDO_CARRIL --> DETENIDO_SEGURIDAD: video, imagen, emergencia, peatón, carril perdido
+    DETENIDO_SEGURIDAD --> SIGUIENDO_CARRIL: desaparece la causa
+    SIGUIENDO_CARRIL --> MANUAL: la app pone modo manual
+    MANUAL --> SIGUIENDO_CARRIL: la app regresa a autónomo
 ```
 
-**Zonas ocupadas (fusión)**: una zona está ocupada si YOLO ve ahí un obstáculo (o una persona a un lado) con área ≥ `area_obstaculo_zona`, **o** si OpenCV la marca como bloqueada.
-Para elegir el giro se suma un "puntaje" por zona (áreas de YOLO + ocupación de OpenCV) y se gira hacia el lado con menos puntaje.
+Desde **cualquier** estado se pasa a DETENIDO_SEGURIDAD (regla 1) o a MANUAL (regla 2). En ambos casos se cancela la maniobra en curso.
 
-**Anti-titubeo**: una acción nueva debe repetirse `confirmaciones_k` cuadros seguidos. El DETENER de la regla 1 es la única excepción y se aplica de inmediato.
-Mientras se confirma, el motivo en pantalla dice, por ejemplo, `Camino libre (confirmando GIRAR_IZQ 1/3)`.
+### 5.3 Seguimiento de carril (`carril.py`)
 
-Cada decisión guarda su **motivo** y el **número de regla**, que se ven en pantalla y se guardan en el CSV.
+1. Región de interés: la parte inferior de la imagen (`roi_inicio_y`).
+2. Máscaras: blanco (S baja, V alta), amarillo (H ≈ 15-38) y, si `metodo` es `"canny"` o `"ambos"`, bordes Canny.
+3. La región se divide en `franjas`. En cada franja se busca la línea amarilla más cercana al centro anterior y el borde blanco a su lado. Si una franja no tiene amarilla (porque es discontinua), se usa el ancho de carril aprendido.
+4. **error** = (centro del carril − centro deseado) / medio ancho de la imagen. Va de −1 a +1.
+5. **PD:** `corrección = kp·error + kd·(Δerror/Δt)`, `vel_izq = base + corrección`, `vel_der = base − corrección` → `MOVER;vel_izq;vel_der`.
+6. **Carril perdido:** durante `max_cuadros_sin_carril` cuadros mantiene el último comando. Después aplica `al_perder_carril`: `"buscar"` gira lento hacia donde se fue el carril (hasta `tiempo_max_busqueda_s`) y `"detener"` se queda quieto hasta reencontrarlo.
 
-### 4.3 Actuar (`comunicacion.py`)
+`carril_objetivo`: `"derecho"` (entre la amarilla y el borde derecho), `"izquierdo"` o `"completo"` (entre los dos bordes blancos).
 
-- Un hilo envía el comando actual **cada 100 ms aunque no cambie**: así se mantiene vivo el fail-safe de la ESP32 (si se dejan de recibir comandos por 500 ms, el auto se detiene).
-- Cada mensaje lleva un número `SEQ`. Al recibir `ACK;SEQ` se calcula la latencia de ida y vuelta, que se muestra como promedio de las últimas 20 muestras.
-- Contadores en pantalla: `Env` (enviados), `ACK`, `ERR` (comando inválido), `Perd` (sin ACK en `tiempo_max_espera_ack_s`).
+### 5.4 Nube (`nube.py`)
 
----
-
-## 5. Calibración
-
-1. Ejecuta `python main.py --webcam --sin-auto --calibrar` (o presiona **C**).
-2. **Ventana "Calibracion HSV (semaforo)"**: muestra en rojo/verde los píxeles de toda la imagen que caen en los rangos.
-   Pon el semáforo frente a la cámara y mueve `H min/max`, `S min` y `V min` hasta que **solo la luz encendida** se pinte.
-   - `R1` = rojo cerca de 0, `R2` = rojo cerca de 179.
-   - `Prop min %` = porcentaje mínimo de la caja que debe tener color para decidir ROJO o VERDE.
-3. **Ventana "Calibracion umbrales"**: muestra la máscara de obstáculos de la ROI.
-   - Con el **piso vacío** delante, sube `Canny bajo/alto` o `Area min cont` hasta que la máscara quede casi negra.
-   - Pon una caja delante y verifica que aparezca blanca y que la zona se marque OCUPADA.
-   - `ROI inicio %`: dónde empieza la región de interés (60 = desde el 60 % de la altura hacia abajo).
-   - `Ocupacion %`: porcentaje de la zona que debe estar ocupado para considerarla bloqueada.
-   - `Brillo min`, `Nitidez min`: límites de imagen confiable (en el panel se ven los valores actuales).
-   - `Conf YOLO %`: confianza mínima de YOLO.
-4. Presiona **G** para guardar en `config.json`.
-
-> Consejo: en el panel lateral se ven el brillo y la nitidez en vivo. Para escoger `nitidez_minima`, mueve la cámara rápido (imagen borrosa) y anota el valor; usa uno un poco mayor.
+- Se manda un evento en cada **cambio de acción o señal** y **cada 2 s**, con un mínimo de 0.25 s entre eventos para no saturar la API.
+  Formato exacto: `{"carrito_id","fecha","senal","confianza","accion","modo"}`.
+- El retroceso se registra como `"detener"`. La API rechaza campos extra, así que el motivo "retroceso" solo queda en el CSV local.
+- **Sin internet:** los eventos van a `pendientes.jsonl` y se suben en lotes al volver la conexión (reintento cada 5 s). Los eventos que la API rechace por inválidos (422) van a `rechazados.jsonl`.
+- **Control:** `GET /api/v1/control/{carrito_id}` cada 300 ms. Si `modo = "manual"`, el carrito obedece la acción. Si no hay respuesta en 1 s estando en manual, se detiene.
+- Todo corre en hilos con cola: la nube **nunca** frena el ciclo de visión.
 
 ---
 
-## 6. Parámetros de `config.json`
+## 6. Calibración (`--calibrar` o tecla C)
 
-| Sección | Parámetro | Significado |
-|---|---|---|
-| `auto` | `ip`, `puerto_udp`, `puerto_stream`, `ruta_stream` | Dirección del auto |
-| `video` | `indice_webcam` | Índice de la webcam USB (0) |
-| | `ancho`, `alto` | Tamaño de trabajo (320×240) |
-| | `max_antiguedad_cuadro_s` | Si el último cuadro es más viejo → DETENER |
-| | `espera_reconexion_s`, `timeout_conexion_ms` | Reconexión del stream |
-| `yolo` | `modelo`, `imgsz`, `confianza` | Modelo, tamaño de entrada, umbral |
-| | `cada_n_cuadros` | 1 = YOLO en todos los cuadros; 2 = uno sí, uno no… |
-| | `clases_persona`, `clases_senal_alto`, `clases_semaforo`, `clases_obstaculo` | Clases relevantes (nombres COCO) |
-| `zonas` | `limite_izq`, `limite_der` | Límites de las zonas (0.33 y 0.66) |
-| `semaforo` | `rojo1_*`, `rojo2_*`, `verde_*` | Rangos HSV `[H, S, V]` |
-| | `proporcion_minima` | Fracción mínima de píxeles de color |
-| `opencv_obstaculos` | `activado`, `metodo` (`canny` o `umbral`) | Respaldo de obstáculos |
-| | `roi_inicio_y`, `desenfoque_kernel`, `canny_bajo`, `canny_alto`, `iteraciones_dilatacion`, `area_minima_contorno`, `umbral_ocupacion_zona` | Ajustes del procesamiento |
-| `calidad_imagen` | `brillo_minimo`, `nitidez_minima` | Imagen no confiable → DETENER |
-| `decision` | `area_persona_minima`, `area_persona_grande` | Persona: tamaño mínimo a considerar / "muy cerca" |
-| | `area_senal_alto_cercana`, `tiempo_alto_s`, `tiempo_ignorar_alto_s` | Señal de alto |
-| | `area_semaforo_minima` | Ignorar semáforos más pequeños (lejanos) |
-| | `area_obstaculo_zona`, `area_obstaculo_muy_cercano`, `tiempo_retroceso_s` | Obstáculos |
-| | `girar_por_obstaculo_lateral` | `true`: también esquiva obstáculos a los lados, no solo al centro |
-| | `giro_preferido` | Giro si ambos lados están igual de libres |
-| | `confirmaciones_k` | Cuadros para confirmar una acción nueva |
-| `velocidades` | una por comando (0–255) | 0 = velocidad por defecto del firmware |
-| `comunicacion` | `intervalo_envio_s`, `tiempo_max_espera_ack_s`, `repeticiones_detener_al_salir`, `muestras_promedio_latencia` | Cliente UDP |
-| `interfaz` | `escala_video`, `ancho_panel` | Tamaño de la ventana |
-| `registro` | `activado`, `carpeta` | CSV de métricas |
+**Ventana "Calibracion carril"**: muestra en blanco el borde detectado y en amarillo la línea central. Los puntos marcan el límite izquierdo (rojo), el derecho (azul) y el centro (verde).
+1. Coloca el carrito centrado en su carril.
+2. `ROI inicio %`: que la región cubra solo la pista cercana.
+3. `Blanco V min` / `Blanco S max`: que los bordes blancos queden completos y el fondo negro.
+4. `Amar H min/max`, `S min`, `V min`: que solo la línea amarilla se pinte de amarillo.
+5. `Canny bajo/alto`: si hay reflejos, súbelos o usa `"metodo": "color"`.
+6. Revisa en la ventana principal que el error sea ≈ 0 con el carrito centrado. Si la cámara no está centrada, ajusta `centro_objetivo` en `config.json`.
+7. **Control PD:** empieza con `Kd = 0` y una `Vel base` baja. Sube `Kp` hasta que corrija sin zigzaguear, y luego sube `Kd` para amortiguar las oscilaciones.
+8. Guarda con **G** o moviendo `GUARDAR (1)` a 1.
+
+**Ventana "Calibracion obstaculos"**: con la pista vacía, la máscara debe quedar negra. Si no, sube `Canny`, `Area min cont` u `Ocupacion %`. Ahí también se ajustan `Brillo min`, `Nitidez min` (una pista oscura puede pasar por "imagen oscura") y `Conf YOLO %`.
+
+**Señales (en `config.json`)**: pon la señal a la distancia a la que quieres que reaccione y observa el % de área que aparece junto a su caja. Usa ese valor como `area_activacion` de esa clase. Calibra `giro_izquierda` / `giro_derecha` ([vel_izq, vel_der]), `duracion_giro_s` y `preparacion_tiempo_s` en la intersección real.
+Para usar distancia en lugar de tiempo: `preparacion_distancia_cm` > 0 y `velocidad_estimada_cm_s` (mídela: cm recorridos en 1 s a la velocidad base).
 
 ---
 
-## 7. Métricas para el reporte
+## 7. Parámetros principales de `config.json`
 
-Cada ejecución crea `registros/recorrido_AAAAMMDD_HHMMSS.csv` con una fila por cuadro:
-`tiempo_s, fps, latencia_ms, accion, motivo, regla, estado, emergencia, pausado, video_ok, brillo, nitidez, semaforo, yolo_ejecutado, num_detecciones, detecciones, ocup_izq/centro/der, zona_izq/centro/der`.
-
-`python analizar_metricas.py` muestra: duración, FPS (promedio/mín/máx), latencia, conteo y porcentaje de cada acción, reglas activadas, cambios de acción, detecciones por clase y colores de semáforo vistos.
-Las detecciones solo se cuentan en los cuadros donde YOLO realmente se ejecutó (`yolo_ejecutado = 1`), para no contar dos veces la misma.
-
----
-
-## 8. Problemas comunes
-
-| Síntoma | Causa probable / solución |
+| Sección | Parámetros |
 |---|---|
-| "SIN VIDEO" con el auto | Revisa la IP y abre `http://IP:81/stream` en el navegador. La ESP32 solo admite **un cliente** de stream a la vez: cierra el navegador antes de ejecutar. |
-| FPS muy bajos | Sube `cada_n_cuadros` a 2 o 3; verifica que `imgsz` sea 320. |
-| Gira sin motivo | Piso con textura o reflejos: sube `canny_bajo/alto`, `area_minima_contorno` o `umbral_ocupacion_zona`. |
-| Semáforo siempre DESCONOCIDO | Calibra HSV; baja `Prop min %`. |
-| Se detiene por "Imagen borrosa" | Baja `nitidez_minima` (cada cámara da valores distintos). |
-| Latencia "--" | No llegan ACK: revisa IP, puerto 4210 y el firewall de Windows (permitir Python en redes privadas). |
-| Los textos en pantalla no llevan acentos | Es normal: OpenCV no puede dibujar á, é, ñ. En el CSV sí se guardan. |
+| `auto` | `ip`, `puerto_udp`, `clave`, `puerto_stream`, `ruta_stream` |
+| `video` | tamaño de trabajo y `max_antiguedad_cuadro_s` (1 s) |
+| `yolo` | modelo COCO, `cada_n_cuadros`, `clases_persona`, `clases_obstaculo` |
+| `senales` | `modelo` (modelo/best.pt), `cada_n_cuadros`, traducción de `clases` |
+| `carril` | `carril_objetivo`, `metodo`, rangos HSV, Canny, franjas, `kp`, `kd`, `velocidad_base`, límites de rueda |
+| `opencv_obstaculos` | ROI, Canny, `umbral_ocupacion_zona`, `margen_lineas_carril` |
+| `decision` | señales (`umbral_confianza_senal`, `confirmacion_senal_k/m`, `area_activacion`), alto (`tiempo_alto_s`, `tiempo_ignorar_alto_s`), giros (preparación, `giro_izquierda/derecha`, `duracion_giro_s`, reenganche, `tiempo_ignorar_giros_s`), obstáculos (áreas, retroceso, esquive), carril perdido (`max_cuadros_sin_carril`, `al_perder_carril`, búsqueda), `esperar_senal_avanzar_al_iniciar` |
+| `velocidades` | velocidad de AVANZAR/GIRAR/RETROCEDER (modo manual) |
+| `comunicacion` | `intervalo_envio_s`, `max_sin_decision_s`, `rellenar_parametros` |
+| `nube` | `api_url`, `carrito_id`, intervalos, timeouts, archivos de pendientes |
+
+---
+
+## 8. Pruebas y métricas
+
+- `python prueba_10.py`: para cada señal pide 10 intentos (`s` = éxito, `n` = fallo, `r` = repetir, `q` = terminar) con nota opcional. Guarda `pruebas/pruebas_*.csv` y muestra la tabla de % de éxito.
+  `--incluir-seguridad` agrega peatón y obstáculo, `--continuar archivo.csv` retoma una sesión y `--resumen archivo.csv` solo calcula los porcentajes.
+- Cada ejecución de `main.py` crea `registros/recorrido_*.csv` con estado, comando, motivo, regla, señal, confianza, error de carril, zonas, nube y pendientes.
+  `python analizar_metricas.py` muestra FPS, latencia, cuadros por estado, acciones, reglas, señales, % de carril detectado y error promedio.
+
+---
+
+## 9. Problemas comunes
+
+| Síntoma | Solución |
+|---|---|
+| "Carrito no responde (IP o CLAVE?)" | Revisa la IP (172.20.10.3), la `clave` y el firewall de Windows (permitir Python en redes privadas) |
+| "SIN VIDEO" | Abre `http://IP:81/stream` en el navegador y ciérralo antes de ejecutar: la ESP32 admite un solo cliente |
+| Se detiene por "Imagen muy oscura" | La pista es oscura: baja `brillo_minimo` |
+| Zigzaguea | Baja `kp`, sube `kd` o baja `velocidad_base` |
+| No toma las curvas | Sube `kp` o `velocidad_rueda_max`, o permite una rueda negativa (`velocidad_rueda_min`) |
+| Confunde las líneas | Recalibra HSV; con reflejos usa `"metodo": "color"` |
+| Frena ante un objeto que no está | Sube `umbral_ocupacion_zona` / `area_minima_contorno` |
+| No ve un objeto oscuro sobre la pista oscura | Es una limitación de los bordes: lo cubre YOLO si la clase está en `clases_obstaculo` |
+| Objetos amarillos o blancos no se ven por bordes | Se confunden con las líneas del carril y se borran; YOLO sigue detectándolos |
+| "token rechazado (401/403)" | Revisa `TOKEN_CARRITO` en `.env` |
+| Pendientes no bajan | No hay conexión o la API está dormida (Render gratis tarda ~1 min en despertar) |

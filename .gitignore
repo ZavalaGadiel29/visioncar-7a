@@ -1,0 +1,29 @@
+# Secretos
+.env
+
+# Entornos virtuales
+venv/
+.venv/
+
+# Datos generados al correr el carrito
+registros/
+pruebas/
+pendientes.jsonl
+pendientes.jsonl.tmp
+rechazados.jsonl
+config.json.tmp
+
+# Python
+__pycache__/
+*.pyc
+
+# Otros archivos con secretos (variantes de .env, llaves, credenciales)
+.env.*
+!.env.example
+*.pem
+*.key
+credenciales*.json
+secrets*.json
+
+# Pruebas de la API
+.pytest_cache/

@@ -2,7 +2,6 @@
   "auto": {
     "ip": "172.20.10.3",
     "puerto_udp": 4210,
-    "clave": "visioncar7a",
     "puerto_stream": 81,
     "ruta_stream": "/stream"
   },

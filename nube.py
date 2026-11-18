@@ -32,22 +32,13 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 
+from configuracion import cargar_env
+
 SENALES = ("alto", "avanzar", "izquierda", "derecha", "ninguna", "peaton")
 ACCIONES = ("avanzar", "detener", "girar_izq", "girar_der")
 MODOS = ("autonomo", "manual")
 
 
-def cargar_env(ruta=".env"):
-    """Lee un archivo .env sencillo (CLAVE=valor). No pisa variables ya existentes."""
-    if not os.path.exists(ruta):
-        return
-    with open(ruta, "r", encoding="utf-8") as archivo:
-        for linea in archivo:
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-            clave, valor = linea.split("=", 1)
-            os.environ.setdefault(clave.strip(), valor.strip().strip('"').strip("'"))
 
 
 class ClienteNube:

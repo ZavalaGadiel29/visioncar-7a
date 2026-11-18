@@ -40,7 +40,7 @@ Todas las decisiones se toman en la laptop. La ESP32-CAM transmite el video y ob
 | `configuracion.py` | — | Carga y guarda `config.json` |
 | `config.json` | — | **Todos** los tiempos, umbrales y velocidades |
 | `modelo/best.pt` | — | Modelo de señales (cópialo aquí cuando esté entrenado) |
-| `.env` | — | Token de la API (**no se sube a git**) |
+| `.env` | — | Secretos: `CLAVE_UDP` y token de la API (**no se sube a git**) |
 
 ---
 
@@ -54,7 +54,7 @@ pip install -r requirements.txt
 
 La nube no necesita paquetes extra (usa la biblioteca estándar de Python).
 
-**Token de la API:** copia `.env.example` como `.env` y pon el valor de `TOKEN_CARRITO`, el mismo que está configurado en la API (Render).
+**Secretos (.env):** copia `.env.example` como `.env` y pon `CLAVE_UDP` (la misma clave que tiene el firmware del carrito) y `TOKEN_CARRITO` (el mismo que está configurado en la API en Render).
 La URL de la API está en `config.json → nube.api_url`. También se puede poner `API_URL=...` en `.env`.
 
 **Modelo de señales:** copia el archivo entrenado como `modelo/best.pt`, con las clases `alto`, `avanzar`, `izquierda` y `derecha`.
@@ -98,13 +98,13 @@ Sobre el video se dibujan la región del carril (amarillo = límite izquierdo, b
 
 ## 4. Protocolo del carrito (firmware v2)
 
-`CLAVE;SEQ;COMANDO;P1;P2` por UDP al puerto 4210 de `172.20.10.3`, con la clave `visioncar7a`.
+`CLAVE;SEQ;COMANDO;P1;P2` por UDP al puerto 4210 de `172.20.10.3`. La clave compartida con el firmware va en el archivo `.env` como `CLAVE_UDP` (nunca en `config.json` ni en git).
 
 | Comando | Parámetros | Ejemplo |
 |---|---|---|
-| `AVANZAR`, `RETROCEDER`, `GIRAR_IZQ`, `GIRAR_DER` | vel 0-255 (0 = por defecto) | `visioncar7a;12;AVANZAR;160` |
-| `DETENER` | — | `visioncar7a;13;DETENER` |
-| `MOVER` | vel_izq, vel_der (-255 a 255) | `visioncar7a;14;MOVER;190;110` |
+| `AVANZAR`, `RETROCEDER`, `GIRAR_IZQ`, `GIRAR_DER` | vel 0-255 (0 = por defecto) | `CLAVE;12;AVANZAR;160` |
+| `DETENER` | — | `CLAVE;13;DETENER` |
+| `MOVER` | vel_izq, vel_der (-255 a 255) | `CLAVE;14;MOVER;190;110` |
 
 - `SEQ` empieza en 1 y siempre aumenta. El carrito responde `ACK;SEQ`, y con eso se calcula la latencia de ida y vuelta.
 - El comando actual se **reenvía cada 100 ms** (el carrito se detiene solo si pasan 500 ms sin recibir nada).
@@ -197,7 +197,7 @@ Para usar distancia en lugar de tiempo: `preparacion_distancia_cm` > 0 y `veloci
 
 | Sección | Parámetros |
 |---|---|
-| `auto` | `ip`, `puerto_udp`, `clave`, `puerto_stream`, `ruta_stream` |
+| `auto` | `ip`, `puerto_udp`, `puerto_stream`, `ruta_stream` |
 | `video` | tamaño de trabajo y `max_antiguedad_cuadro_s` (1 s) |
 | `yolo` | modelo COCO, `cada_n_cuadros`, `clases_persona`, `clases_obstaculo` |
 | `senales` | `modelo` (modelo/best.pt), `cada_n_cuadros`, traducción de `clases` |
@@ -223,7 +223,7 @@ Para usar distancia en lugar de tiempo: `preparacion_distancia_cm` > 0 y `veloci
 
 | Síntoma | Solución |
 |---|---|
-| "Carrito no responde (IP o CLAVE?)" | Revisa la IP (172.20.10.3), la `clave` y el firewall de Windows (permitir Python en redes privadas) |
+| "Carrito no responde (IP o CLAVE?)" | Revisa la IP (172.20.10.3), `CLAVE_UDP` en `.env` y el firewall de Windows (permitir Python en redes privadas) |
 | "SIN VIDEO" | Abre `http://IP:81/stream` en el navegador y ciérralo antes de ejecutar: la ESP32 admite un solo cliente |
 | Se detiene por "Imagen muy oscura" | La pista es oscura: baja `brillo_minimo` |
 | Zigzaguea | Baja `kp`, sube `kd` o baja `velocidad_base` |

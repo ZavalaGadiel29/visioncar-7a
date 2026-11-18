@@ -8,7 +8,7 @@ Protocolo v2:
         AVANZAR;vel   RETROCEDER;vel   GIRAR_IZQ;vel   GIRAR_DER;vel   (vel 0-255, 0 = por defecto)
         DETENER
         MOVER;vel_izq;vel_der     (cada rueda de -255 a 255, para giros suaves)
-        ej.  "visioncar7a;57;MOVER;180;120"
+        ej.  "<CLAVE_UDP>;57;MOVER;180;120"
     Carrito -> laptop :  "ACK;SEQ"   (si la CLAVE está mal, NO responde)
 
 Ideas clave:

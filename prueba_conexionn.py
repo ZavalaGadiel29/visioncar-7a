@@ -109,8 +109,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ip", help="IP del auto (aparece en el Monitor Serie)")
     p.add_argument("--webcam", action="store_true", help="usar la webcam de la laptop")
-    p.add_argument("--clave", default="visioncar7a", help="clave compartida con el firmware v2")
+    p.add_argument("--clave", default=None, help="clave compartida con el firmware v2 (por defecto, CLAVE_UDP del .env)")
     args = p.parse_args()
+    if args.clave is None:
+        from configuracion import obtener_clave_udp
+        args.clave = obtener_clave_udp()
+    if args.ip and not args.clave:
+        p.error("Falta CLAVE_UDP en el archivo .env (o pásala con --clave)")
 
     if args.webcam:
         fuente = 0

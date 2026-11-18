@@ -25,7 +25,7 @@ import cv2
 
 from carril import DetectorCarril
 from comunicacion import ClienteUDP, Comando
-from configuracion import cargar_config, guardar_config
+from configuracion import cargar_config, guardar_config, obtener_clave_udp
 from decision import AgenteDecision, EntradaPercepcion
 from interfaz import NOMBRE_VENTANA, Calibrador, DatosPantalla, Interfaz
 from nube import ClienteNube
@@ -79,7 +79,12 @@ def main():
     detector_carril = DetectorCarril(config["carril"])
     agente = AgenteDecision(config)
 
-    cliente = ClienteUDP(config["auto"]["ip"], config["auto"]["puerto_udp"], config["auto"]["clave"],
+    # La clave UDP es un secreto: se lee de .env (CLAVE_UDP), no de config.json
+    clave_udp = obtener_clave_udp(config["nube"].get("archivo_env", ".env"))
+    if not clave_udp and not args.sin_auto:
+        raise SystemExit("Falta CLAVE_UDP en el archivo .env (copia .env.example como .env y ponla). "
+                         "Para probar sin carrito usa --sin-auto.")
+    cliente = ClienteUDP(config["auto"]["ip"], config["auto"]["puerto_udp"], clave_udp,
                          config["comunicacion"], simulado=args.sin_auto)
     cliente.iniciar()
 

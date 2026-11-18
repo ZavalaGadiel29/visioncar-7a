@@ -3,7 +3,6 @@
 Esta API guarda cada decisión que toma el carrito autónomo. Ustedes la usan desde la **página web**, el **dashboard en vivo** y la **app móvil**.
 
 - **URL base:** `https://visioncar-api.onrender.com/api/v1`
-  (el grupo del carrito les confirma la URL exacta)
 - **Documentación interactiva:** `https://visioncar-api.onrender.com/docs`. Ahí pueden probar cada endpoint con el botón **Try it out**.
 - **Formato:** JSON (UTF-8).
 - **Fechas:** hora local del carrito, sin zona horaria: `"2026-12-04T10:15:32"`.

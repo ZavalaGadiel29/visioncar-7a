@@ -28,7 +28,7 @@ from . import VERSION, fechas
 from .almacen_memoria import AlmacenMemoria
 from .configuracion import Configuracion, cargar_configuracion
 from .limites import LimitePeticiones, TamanoMaximoCuerpo
-from .rutas import control, demo, estadisticas, eventos, salud
+from .rutas import componentes, control, demo, estadisticas, eventos, salud
 
 PREFIJO = "/api/v1"
 registro = logging.getLogger("visioncar")
@@ -65,6 +65,7 @@ ETIQUETAS = [
     {"name": "Eventos", "description": "Decisiones registradas por el carrito."},
     {"name": "Estadísticas", "description": "Resúmenes para el dashboard."},
     {"name": "Control remoto", "description": "Modo manual desde la app móvil."},
+    {"name": "Componentes", "description": "Catálogo de las piezas del carrito (solo lectura)."},
     {"name": "Modo demo", "description": "Datos falsos para probar sin carrito (solo MODO_DEMO=1)."},
     {"name": "Salud", "description": "Estado de la API (sin token)."},
 ]
@@ -134,6 +135,7 @@ def crear_app(config: Configuracion | None = None) -> FastAPI:
     app.include_router(eventos.router, prefix=PREFIJO)
     app.include_router(estadisticas.router, prefix=PREFIJO)
     app.include_router(control.router, prefix=PREFIJO)
+    app.include_router(componentes.router, prefix=PREFIJO)
     app.include_router(salud.router, prefix=PREFIJO)
     if config.modo_demo:
         app.include_router(demo.router, prefix=PREFIJO)

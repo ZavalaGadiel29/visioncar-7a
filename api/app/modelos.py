@@ -176,3 +176,28 @@ class DemoEntrada(BaseModel):
 class DemoRespuesta(BaseModel):
     generados: int
     carrito_id: str
+
+
+# --- Catálogo de componentes del carrito (solo lectura) ----------------------
+TIPOS_COMPONENTE = ("control", "sensor", "comunicación", "actuador", "energía", "estructura")
+TipoComponente = Literal["control", "sensor", "comunicación", "actuador", "energía", "estructura"]
+
+
+class Componente(BaseModel):
+    """Una pieza del carrito. Los datos vienen de app/datos/componentes.json."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{
+            "id": "l298n", "nombre": "Driver de motores L298N", "tipo": "actuador",
+            "voltaje": "5–35 V (en el carrito 7.4 V)", "cantidad": 1,
+            "funcion": "Da la potencia a los motores y controla su sentido",
+        }]},
+    )
+
+    id: str = Field(pattern=r"^[a-z0-9_]{1,40}$", description="Identificador corto, ej. l298n.")
+    nombre: str = Field(min_length=1, description="Nombre de la pieza.")
+    tipo: TipoComponente = Field(description="control | sensor | comunicación | actuador | energía | estructura")
+    voltaje: Optional[str] = Field(description="Voltaje de trabajo; null si no aplica (piezas sin electricidad).")
+    cantidad: int = Field(ge=1, description="Cuántas lleva el carrito.")
+    funcion: str = Field(min_length=1, description="Para qué sirve en el carrito.")

@@ -18,7 +18,8 @@ API en la nube del carrito autónomo. El carrito registra cada decisión y 4° l
 | `app/fechas.py` | Manejo de fechas (hora local del carrito) |
 | `app/almacen_memoria.py` | Guardado en memoria (MODO_DEMO=1) |
 | `app/almacen_mongo.py` | Guardado en MongoDB Atlas e índices |
-| `app/rutas/*.py` | Endpoints: eventos, estadísticas, control, demo y salud |
+| `app/rutas/*.py` | Endpoints: eventos, estadísticas, control, componentes, demo y salud |
+| `app/datos/componentes.json` | Catálogo de piezas del carrito (se edita aquí y se hace push) |
 | `tests/` | Pruebas con pytest |
 | `render.yaml` | Configuración para publicar en Render |
 | `.env.example` | Plantilla de variables (el `.env` real no se sube) |

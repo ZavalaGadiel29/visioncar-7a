@@ -1,0 +1,90 @@
+[
+  {
+    "id": "esp32cam",
+    "nombre": "ESP32-CAM AI-Thinker",
+    "tipo": "control",
+    "voltaje": "5 V (opera a 3.3 V)",
+    "cantidad": 1,
+    "funcion": "Transmite el video y mueve los motores según los comandos"
+  },
+  {
+    "id": "ov2640",
+    "nombre": "Cámara OV2640",
+    "tipo": "sensor",
+    "voltaje": "3.3 V",
+    "cantidad": 1,
+    "funcion": "Captura la imagen del camino y las señales"
+  },
+  {
+    "id": "antena",
+    "nombre": "Antena externa 2.4 GHz",
+    "tipo": "comunicación",
+    "voltaje": null,
+    "cantidad": 1,
+    "funcion": "Mejora la señal Wi-Fi del video y los comandos"
+  },
+  {
+    "id": "l298n",
+    "nombre": "Driver de motores L298N",
+    "tipo": "actuador",
+    "voltaje": "5–35 V (en el carrito 7.4 V)",
+    "cantidad": 1,
+    "funcion": "Da la potencia a los motores y controla su sentido"
+  },
+  {
+    "id": "motor_tt",
+    "nombre": "Motor DC TT con reductora",
+    "tipo": "actuador",
+    "voltaje": "3–6 V",
+    "cantidad": 2,
+    "funcion": "Mueven las ruedas traseras"
+  },
+  {
+    "id": "hw131",
+    "nombre": "Módulo de energía HW-131",
+    "tipo": "energía",
+    "voltaje": "Entrada 6.5–12 V; salidas 5 V y 3.3 V",
+    "cantidad": 1,
+    "funcion": "Baja el voltaje de las baterías a 5 V para la ESP32-CAM"
+  },
+  {
+    "id": "bateria_18650",
+    "nombre": "Batería 18650 1500 mAh",
+    "tipo": "energía",
+    "voltaje": "3.7 V",
+    "cantidad": 2,
+    "funcion": "Alimentan todo el carrito"
+  },
+  {
+    "id": "portapilas",
+    "nombre": "Portapilas 2×18650 con interruptor",
+    "tipo": "energía",
+    "voltaje": "7.4 V",
+    "cantidad": 1,
+    "funcion": "Une las baterías en serie y enciende el carrito"
+  },
+  {
+    "id": "chasis",
+    "nombre": "Chasis 2WD de acrílico",
+    "tipo": "estructura",
+    "voltaje": null,
+    "cantidad": 1,
+    "funcion": "Base donde va montado todo"
+  },
+  {
+    "id": "ruedas",
+    "nombre": "Rueda de 65 mm",
+    "tipo": "estructura",
+    "voltaje": null,
+    "cantidad": 2,
+    "funcion": "Tracción"
+  },
+  {
+    "id": "rueda_loca",
+    "nombre": "Rueda loca",
+    "tipo": "estructura",
+    "voltaje": null,
+    "cantidad": 1,
+    "funcion": "Apoyo delantero"
+  }
+]

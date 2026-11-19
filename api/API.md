@@ -22,7 +22,7 @@ Authorization: Bearer <token>
 
 | Token | Para quién | Puede usar |
 |---|---|---|
-| `TOKEN_LECTURA` | Página web y dashboard | Todos los `GET` |
+| `TOKEN_LECTURA` | Página web y dashboard | Todos los `GET` (incluye `/componentes`) |
 | `TOKEN_APP` | App móvil | Todos los `GET` + `PUT /control` + `POST /demo/generar` |
 | `TOKEN_CARRITO` | Solo el carrito | `POST /eventos` y `GET /control` (ustedes no lo necesitan) |
 
@@ -167,6 +167,46 @@ const latido = setInterval(() => {
   });
 }, 500);
 // al salir del modo manual: clearInterval(latido) y PUT {"modo": "autonomo"}
+```
+
+### `GET /componentes`: piezas del carrito (LECTURA o APP)
+Catálogo fijo, en el mismo orden siempre. Útil para la página web ("¿de qué está hecho el carrito?").
+
+| Parámetro | Ejemplo | Descripción |
+|---|---|---|
+| `tipo` | `energía` | Opcional. `control`, `sensor`, `comunicación`, `actuador`, `energía` o `estructura` (con acento; `fetch` lo codifica solo). Otro valor da **422** |
+
+```
+GET /api/v1/componentes?tipo=actuador
+```
+```json
+// 200
+[
+  {"id": "l298n", "nombre": "Driver de motores L298N", "tipo": "actuador", "voltaje": "5–35 V (en el carrito 7.4 V)", "cantidad": 1, "funcion": "Da la potencia a los motores y controla su sentido"},
+  {"id": "motor_tt", "nombre": "Motor DC TT con reductora", "tipo": "actuador", "voltaje": "3–6 V", "cantidad": 2, "funcion": "Mueven las ruedas traseras"}
+]
+```
+`voltaje` es `null` en las piezas que no llevan electricidad (chasis, ruedas, antena).
+
+Ids disponibles: `esp32cam`, `ov2640`, `antena`, `l298n`, `motor_tt`, `hw131`, `bateria_18650`, `portapilas`, `chasis`, `ruedas`, `rueda_loca`.
+
+### `GET /componentes/{id}`: una pieza (LECTURA o APP)
+```
+GET /api/v1/componentes/esp32cam
+```
+```json
+// 200
+{"id": "esp32cam", "nombre": "ESP32-CAM AI-Thinker", "tipo": "control", "voltaje": "5 V (opera a 3.3 V)", "cantidad": 1, "funcion": "Transmite el video y mueve los motores según los comandos"}
+```
+```json
+// 404 si el id no existe
+{"detail": "No existe el componente 'motor_x'."}
+```
+
+```js
+// Web: tabla de componentes
+const piezas = await api("/componentes");
+const energia = await api("/componentes?tipo=" + encodeURIComponent("energía"));
 ```
 
 ### `POST /demo/generar`: crear datos de ejemplo (solo APP, solo en modo demo)

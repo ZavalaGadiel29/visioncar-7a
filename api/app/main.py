@@ -9,7 +9,8 @@ Se ejecuta con (la opción --factory hace que uvicorn llame a crear_app()):
 
 Qué hace crear_app():
   1. Lee la configuración (.env / variables de entorno).
-  2. Elige dónde guardar: memoria si MODO_DEMO=1, MongoDB Atlas si no.
+  2. Elige dónde guardar: PostgreSQL si existe DATABASE_URL; si no,
+     memoria si MODO_DEMO=1 o MongoDB Atlas.
   3. Agrega las protecciones: límite de peticiones, tamaño máximo y CORS.
   4. Registra las rutas bajo /api/v1 y la documentación en /docs.
 """
@@ -72,6 +73,9 @@ ETIQUETAS = [
 
 
 def _crear_almacen(config: Configuracion):
+    if config.usa_postgres:
+        from .almacen_postgres import AlmacenPostgres
+        return AlmacenPostgres(config.database_url)
     if config.modo_demo:
         return AlmacenMemoria()
     from .almacen_mongo import AlmacenMongo
@@ -130,6 +134,16 @@ def crear_app(config: Configuracion | None = None) -> FastAPI:
     async def base_caida(_request: Request, error: PyMongoError):
         registro.error("Error de MongoDB: %s", error)
         return JSONResponse(status_code=503, content={"detail": "La base de datos no responde. Intenta más tarde."})
+
+    if config.usa_postgres:
+        from psycopg import Error as PostgresError
+        from psycopg_pool import PoolTimeout
+
+        @app.exception_handler(PostgresError)
+        @app.exception_handler(PoolTimeout)
+        async def postgres_caido(_request: Request, error: Exception):
+            registro.error("Error de PostgreSQL: %s", error)
+            return JSONResponse(status_code=503, content={"detail": "La base de datos no responde. Intenta más tarde."})
 
     # --- Rutas ---
     app.include_router(eventos.router, prefix=PREFIJO)

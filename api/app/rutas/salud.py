@@ -19,16 +19,19 @@ router = APIRouter(tags=["Salud"])
     response_model=Salud,
     summary="Estado de la API y de la base de datos",
     description="No necesita token. Responde **200** si todo está bien y **503** si la base de "
-                "datos no responde. En MODO_DEMO, `base_datos` es `memoria`.",
+                "datos no responde. `base_datos` dice cuál se usa (`memoria` en MODO_DEMO, `postgresql` "
+                "con Supabase) y `conexion` si responde (`ok` / `error`).",
     responses={503: {"description": "La base de datos no responde.", "model": Salud}},
 )
 async def salud(request: Request):
     almacen = request.app.state.almacen
     config = request.app.state.config
-    if almacen.nombre == "memoria":
-        base = "memoria"
-    else:
-        base = "ok" if await almacen.ping() else "error"
-    cuerpo = Salud(estado="ok" if base != "error" else "error", base_datos=base,
-                   modo_demo=config.modo_demo, version=VERSION, hora_servidor=fechas.ahora_local().replace(microsecond=0))
-    return JSONResponse(status_code=200 if base != "error" else 503, content=cuerpo.model_dump(mode="json"))
+    conectada = await almacen.ping()
+    if almacen.nombre in ("memoria", "postgresql"):
+        base = almacen.nombre
+    else:                                   # MongoDB conserva su respuesta original
+        base = "ok" if conectada else "error"
+    cuerpo = Salud(estado="ok" if conectada else "error", base_datos=base,
+                   conexion="ok" if conectada else "error", modo_demo=config.modo_demo,
+                   version=VERSION, hora_servidor=fechas.ahora_local().replace(microsecond=0))
+    return JSONResponse(status_code=200 if conectada else 503, content=cuerpo.model_dump(mode="json"))

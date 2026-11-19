@@ -14,6 +14,7 @@ pasarse, se borran los más antiguos.
 import itertools
 from datetime import datetime
 
+from . import catalogo
 from .fechas import ahora_utc
 
 MAXIMO_EVENTOS = 50_000
@@ -103,6 +104,13 @@ class AlmacenMemoria:
                               actualizado: datetime) -> dict:
         self._control[carrito_id] = {"modo": modo, "accion": accion, "actualizado": actualizado}
         return self._control[carrito_id]
+
+    # --- Componentes (catálogo, desde app/datos/componentes.json) ---------
+    async def listar_componentes(self, tipo: str | None = None) -> list[dict]:
+        return catalogo.listar(tipo)
+
+    async def obtener_componente(self, id_componente: str) -> dict | None:
+        return catalogo.obtener(id_componente)
 
 
 def _clave_tiempo(e):

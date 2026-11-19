@@ -81,10 +81,10 @@ class EventoGuardado(EventoEntrada):
     """Evento tal como lo devuelve la API: el contrato más su identificador."""
 
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"id": "675012ab34cd56ef7890abcd", **EJEMPLO_EVENTO}]}
+        json_schema_extra={"examples": [{"id": "1532", **EJEMPLO_EVENTO}]}
     )
 
-    id: str = Field(description="Identificador único asignado por la base de datos.")
+    id: str = Field(description="Identificador único asignado por la base de datos (texto).")
 
 
 def _tipo_de_cuerpo(valor) -> str:
@@ -157,7 +157,10 @@ class ControlRespuesta(BaseModel):
 # --- Salud y demo -----------------------------------------------------------
 class Salud(BaseModel):
     estado: Literal["ok", "error"]
-    base_datos: Literal["ok", "error", "memoria"]
+    base_datos: Literal["ok", "error", "memoria", "postgresql"] = Field(
+        description="MongoDB: ok/error. Modo demo: memoria. PostgreSQL: postgresql (ver 'conexion')."
+    )
+    conexion: Literal["ok", "error"] = Field(description="¿La base de datos responde?")
     modo_demo: bool
     version: str
     hora_servidor: datetime

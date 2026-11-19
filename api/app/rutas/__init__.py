@@ -10,7 +10,7 @@ from ..modelos import CarritoId  # noqa: F401  (se reexporta para las rutas)
 
 
 def obtener_almacen(request: Request):
-    """Devuelve el almacenamiento activo (memoria en MODO_DEMO o MongoDB)."""
+    """Devuelve el almacenamiento activo (memoria, MongoDB o PostgreSQL)."""
     return request.app.state.almacen
 
 

@@ -8,37 +8,20 @@ Catálogo de las piezas del carrito (solo lectura):
 
 Los datos están en app/datos/componentes.json. Para agregar o corregir una
 pieza se edita ese archivo y se hace push: Render vuelve a publicar solo.
+Con PostgreSQL se leen de la tabla `componentes`, que se llena desde ese
+mismo archivo la primera vez (si la tabla está vacía).
 """
 
-import json
-from pathlib import Path
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path as RutaParametro, Query
-from pydantic import TypeAdapter
 
+from ..catalogo import ARCHIVO_COMPONENTES, COMPONENTES, cargar_componentes  # noqa: F401
 from ..modelos import Componente, TipoComponente
 from ..seguridad import PUEDE_LEER
-from . import ERROR_422, ERRORES_COMUNES, _error
+from . import ERROR_422, ERRORES_COMUNES, _error, obtener_almacen
 
 router = APIRouter(tags=["Componentes"])
-
-ARCHIVO_COMPONENTES = Path(__file__).resolve().parent.parent / "datos" / "componentes.json"
-
-
-def cargar_componentes(ruta: Path = ARCHIVO_COMPONENTES) -> list[Componente]:
-    """Lee y valida el JSON. Si tiene un error, la API no arranca (mejor que fallar después)."""
-    with open(ruta, encoding="utf-8") as archivo:
-        componentes = TypeAdapter(list[Componente]).validate_python(json.load(archivo))
-    ids = [c.id for c in componentes]
-    if len(ids) != len(set(ids)):
-        raise RuntimeError(f"Hay ids repetidos en {ruta.name}.")
-    return componentes
-
-
-# Se carga una sola vez al importar: es un catálogo fijo.
-COMPONENTES = cargar_componentes()
-POR_ID = {c.id: c for c in COMPONENTES}
 
 
 @router.get(
@@ -59,8 +42,9 @@ async def listar_componentes(
                                                         "actuador": {"summary": "Solo actuadores", "value": "actuador"},
                                                     })] = None,
     _rol=Depends(PUEDE_LEER),
+    almacen=Depends(obtener_almacen),
 ):
-    return [c for c in COMPONENTES if tipo is None or c.tipo == tipo]
+    return await almacen.listar_componentes(tipo)
 
 
 @router.get(
@@ -75,8 +59,9 @@ async def listar_componentes(
 async def obtener_componente(
     id: Annotated[str, RutaParametro(description="Id del componente.", examples=["esp32cam"])],
     _rol=Depends(PUEDE_LEER),
+    almacen=Depends(obtener_almacen),
 ):
-    componente = POR_ID.get(id)
+    componente = await almacen.obtener_componente(id)
     if componente is None:
         raise HTTPException(status_code=404, detail=f"No existe el componente '{id}'.")
     return componente

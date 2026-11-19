@@ -17,6 +17,8 @@ from datetime import datetime
 
 from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 
+from . import catalogo
+
 registro = logging.getLogger("visioncar.mongo")
 
 
@@ -117,6 +119,13 @@ class AlmacenMongo:
         datos = {"modo": modo, "accion": accion, "actualizado": actualizado}
         await self._control.update_one({"_id": carrito_id}, {"$set": datos}, upsert=True)
         return datos
+
+    # --- Componentes (catálogo, desde app/datos/componentes.json) ---------
+    async def listar_componentes(self, tipo: str | None = None) -> list[dict]:
+        return catalogo.listar(tipo)
+
+    async def obtener_componente(self, id_componente: str) -> dict | None:
+        return catalogo.obtener(id_componente)
 
 
 def _publico(doc: dict) -> dict:

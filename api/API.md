@@ -8,7 +8,8 @@ Esta API guarda cada decisión que toma el carrito autónomo. Ustedes la usan de
 - **Fechas:** hora local del carrito, sin zona horaria: `"2026-12-04T10:15:32"`.
 
 > **Importante (plan gratuito de Render):** si nadie usa la API durante 15 minutos, se "duerme". La primera petición después de eso tarda unos **50 segundos**. Muestren un "cargando..." y no la den por caída.
-> **Modo demo:** mientras el carrito no esté listo, la API corre en modo demo: los datos son de ejemplo y **se borran cuando la API se reinicia**. Al arrancar siempre se crean 100 eventos de ejemplo del carrito `celula-1`.
+
+> **Datos reales:** la API guarda todo en PostgreSQL (Supabase), así que los datos **ya no se borran** al reiniciarse. Solo hay datos que mandó el carrito: el modo demo y `POST /demo/generar` están apagados. Las rutas, los tokens y el formato de los datos no cambiaron. (Si algún día la API vuelve a correr sin base de datos, regresa el modo demo con 100 eventos de ejemplo que se borran al reiniciar.)
 
 ---
 
@@ -68,7 +69,7 @@ curl -H "Authorization: Bearer TOKEN_LECTURA" "https://visioncar-api.onrender.co
 | `accion` | texto | `avanzar`, `detener`, `girar_izq`, `girar_der` |
 | `modo` | texto | `autonomo`, `manual` |
 
-Al consultar, cada evento trae además `"id"` (texto único).
+Al consultar, cada evento trae además `"id"`: un texto único (por ejemplo `"1532"`). Trátenlo siempre como texto, no como número.
 
 ---
 
@@ -77,9 +78,10 @@ Al consultar, cada evento trae además `"id"` (texto único).
 ### `GET /health`: estado de la API (sin token)
 ```json
 // 200
-{"estado": "ok", "base_datos": "memoria", "modo_demo": true, "version": "1.0.0", "hora_servidor": "2026-12-04T10:15:40"}
+{"estado": "ok", "base_datos": "postgresql", "conexion": "ok", "modo_demo": false, "version": "1.0.0", "hora_servidor": "2026-12-04T10:15:40"}
 ```
-`base_datos`: `ok` (MongoDB funciona), `memoria` (modo demo) o `error` (responde **503**).
+`base_datos`: `postgresql` (Supabase), `memoria` (modo demo), o con MongoDB `ok` / `error`.
+`conexion`: `ok` si la base responde; `error` si no (y la respuesta es **503**).
 
 ### `GET /eventos`: historial (LECTURA o APP)
 Del **más reciente al más antiguo**. Todos los parámetros son opcionales:
@@ -99,8 +101,8 @@ GET /api/v1/eventos?carrito_id=celula-1&senal=alto&limite=2
 ```json
 // 200
 [
-  {"carrito_id": "celula-1", "fecha": "2026-12-04T10:15:32", "senal": "alto", "confianza": 0.93, "accion": "detener", "modo": "autonomo", "id": "675012ab34cd56ef7890abcd"},
-  {"carrito_id": "celula-1", "fecha": "2026-12-04T10:02:11", "senal": "alto", "confianza": 0.88, "accion": "detener", "modo": "autonomo", "id": "675012ab34cd56ef7890abc1"}
+  {"carrito_id": "celula-1", "fecha": "2026-12-04T10:15:32", "senal": "alto", "confianza": 0.93, "accion": "detener", "modo": "autonomo", "id": "1532"},
+  {"carrito_id": "celula-1", "fecha": "2026-12-04T10:02:11", "senal": "alto", "confianza": 0.88, "accion": "detener", "modo": "autonomo", "id": "1498"}
 ]
 ```
 Si no hay resultados responde `[]`. Si mandan `desde` con "Z" (por ejemplo, de `new Date().toISOString()`), se convierte a la hora local.
@@ -109,7 +111,7 @@ Si no hay resultados responde `[]`. Si mandan `desde` con "Z" (por ejemplo, de `
 Ideal para el **dashboard en vivo**: consúltenlo cada 1-2 segundos.
 ```json
 // 200
-{"carrito_id": "celula-1", "fecha": "2026-12-04T10:15:32", "senal": "alto", "confianza": 0.93, "accion": "detener", "modo": "autonomo", "id": "675012ab34cd56ef7890abcd"}
+{"carrito_id": "celula-1", "fecha": "2026-12-04T10:15:32", "senal": "alto", "confianza": 0.93, "accion": "detener", "modo": "autonomo", "id": "1532"}
 ```
 ```json
 // 404 si todavía no hay eventos
@@ -127,7 +129,7 @@ Sin `carrito_id`, se calcula con todos los carritos.
   "conteo_por_accion": {"avanzar": 70, "detener": 23, "girar_izq": 14, "girar_der": 13},
   "confianza_promedio_por_senal": {"alto": 0.8812, "avanzar": 0.8301, "izquierda": 0.79, "derecha": 0.8122, "ninguna": 0.0, "peaton": 0.8455},
   "senal_mas_detectada": "avanzar",
-  "evento_menor_confianza": {"carrito_id": "celula-1", "fecha": "2026-12-04T10:05:12", "senal": "ninguna", "confianza": 0.0, "accion": "avanzar", "modo": "autonomo", "id": "675012ab34cd56ef7890ab99"}
+  "evento_menor_confianza": {"carrito_id": "celula-1", "fecha": "2026-12-04T10:05:12", "senal": "ninguna", "confianza": 0.0, "accion": "avanzar", "modo": "autonomo", "id": "1411"}
 }
 ```
 - `senal_mas_detectada` **no cuenta** `ninguna`. Es `null` si no hay datos.

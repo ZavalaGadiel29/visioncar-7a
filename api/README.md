@@ -1,9 +1,9 @@
-# VisionCar API (FastAPI + MongoDB Atlas)
+# VisionCar API (FastAPI + PostgreSQL en Supabase)
 
 API en la nube del carrito autónomo. El carrito registra cada decisión y 4° la consulta desde la web, el dashboard y la app.
 
 - **Guía para 4°:** [API.md](API.md)
-- **Diagrama de la base de datos:** [DIAGRAMA.md](DIAGRAMA.md)
+- **Diagrama de la base de datos (PostgreSQL):** [DIAGRAMA_BD.md](DIAGRAMA_BD.md) · versión MongoDB: [DIAGRAMA.md](DIAGRAMA.md)
 - **Documentación interactiva:** `/docs` (se genera sola con FastAPI)
 
 ## Archivos
@@ -17,7 +17,10 @@ API en la nube del carrito autónomo. El carrito registra cada decisión y 4° l
 | `app/limites.py` | Límite de peticiones por IP (429) y tamaño máximo del cuerpo (413) |
 | `app/fechas.py` | Manejo de fechas (hora local del carrito) |
 | `app/almacen_memoria.py` | Guardado en memoria (MODO_DEMO=1) |
+| `app/almacen_postgres.py` | Guardado en PostgreSQL (Supabase), si existe `DATABASE_URL` |
 | `app/almacen_mongo.py` | Guardado en MongoDB Atlas e índices |
+| `app/catalogo.py` | Lee el catálogo `componentes.json` |
+| `sql/esquema.sql` | Tablas, restricciones e índices de PostgreSQL (la API lo ejecuta al arrancar) |
 | `app/rutas/*.py` | Endpoints: eventos, estadísticas, control, componentes, demo y salud |
 | `app/datos/componentes.json` | Catálogo de piezas del carrito (se edita aquí y se hace push) |
 | `tests/` | Pruebas con pytest |
@@ -46,7 +49,14 @@ Abre **http://127.0.0.1:8000/docs**, presiona **Authorize** y pega un token.
 ```powershell
 python -m pytest -v
 ```
-No necesitan MongoDB ni internet: usan el modo demo.
+No necesitan base de datos ni internet: usan el modo demo.
+
+Pruebas con PostgreSQL (opcionales; usa una base **de pruebas**, no la de producción):
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://usuario:contraseña@host:5432/postgres"
+python -m pytest tests/test_postgres.py -v
+```
+Sin `TEST_DATABASE_URL` esas pruebas se saltan solas.
 
 ## 2. Variables de entorno
 
@@ -55,9 +65,10 @@ No necesitan MongoDB ni internet: usan el modo demo.
 | `TOKEN_CARRITO` | sí | Token del carrito (`POST /eventos`, `GET /control`) |
 | `TOKEN_LECTURA` | sí | Token de la web y el dashboard (solo `GET`) |
 | `TOKEN_APP` | sí | Token de la app móvil (`GET` y `PUT /control`) |
-| `MODO_DEMO` | no | `1` = memoria, sin MongoDB. `0` = MongoDB (por defecto `0`) |
+| `DATABASE_URL` | no | Cadena de PostgreSQL (Supabase). Si tiene valor, se usa PostgreSQL y el modo demo se apaga solo |
+| `MODO_DEMO` | no | Solo sin `DATABASE_URL`: `1` = memoria, `0` = MongoDB (por defecto `0`) |
 | `DEMO_EVENTOS_INICIALES` | no | Eventos de ejemplo al arrancar en modo demo (100) |
-| `MONGODB_URI` | si `MODO_DEMO=0` | Cadena de conexión de Atlas |
+| `MONGODB_URI` | si `MODO_DEMO=0` y no hay `DATABASE_URL` | Cadena de conexión de Atlas |
 | `MONGODB_BASE` | no | Nombre de la base (`visioncar`) |
 | `CORS_ORIGENES` | no | Dominios de la web de 4°, separados por coma (`*` = todos) |
 | `LIMITE_POR_SEGUNDO` | no | Peticiones por segundo por IP (20) |
@@ -97,9 +108,27 @@ El repositorio es `CARRITO` completo; la API está en la subcarpeta `api/`.
 
 Cada `git push` a `main` vuelve a publicar la API automáticamente.
 
-**Plan gratuito:** el servicio se duerme tras 15 min sin uso y tarda ~50 s en despertar. En MODO_DEMO, al dormirse o reiniciarse **se borran los datos** (vuelven los 100 eventos de ejemplo).
+**Plan gratuito:** el servicio se duerme tras 15 min sin uso y tarda ~50 s en despertar. En MODO_DEMO, al dormirse o reiniciarse **se borran los datos** (vuelven los 100 eventos de ejemplo); con PostgreSQL (sección 4) los datos se conservan.
 
-## 4. Crear la base gratuita en MongoDB Atlas (para dejar el modo demo)
+## 4. Base de datos PostgreSQL en Supabase (datos reales)
+
+Con `DATABASE_URL` la API guarda en PostgreSQL. Las rutas, los tokens y las respuestas son los mismos que en modo demo: 4°A no tiene que cambiar nada.
+
+1. Crea una cuenta en https://supabase.com y un proyecto (**New project**). Elige una región cercana (ej. *East US*) y una **contraseña de base de datos** (guárdala; usa solo letras y números para no tener que codificar símbolos en la URL).
+2. En el proyecto presiona **Connect** (arriba).
+3. En **Connection String → URI**, elige **Session pooler** (método *Session*). No uses *Direct connection*: solo funciona con IPv6 y Render no lo tiene.
+4. Copia la cadena. Se ve así:
+   `postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres`
+5. Cambia `[YOUR-PASSWORD]` por tu contraseña (sin los corchetes) y agrega al final `?sslmode=require`.
+6. Ponla como `DATABASE_URL`: en tu laptop en `api/.env`, y en Render en la pestaña **Environment** (como secreto). **Nunca** la pongas en un archivo que se suba a GitHub.
+7. Al arrancar, la API crea sola las tablas `eventos`, `control` y `componentes` (con el SQL de [sql/esquema.sql](sql/esquema.sql)) y carga el catálogo de componentes si la tabla está vacía. Puedes verlas en Supabase → **Table Editor**.
+8. Revisa `/api/v1/health`: debe decir `"base_datos": "postgresql"` y `"conexion": "ok"`. Si dice `"error"`, revisa la contraseña de la cadena.
+
+Diagrama y explicación de las tablas: [DIAGRAMA_BD.md](DIAGRAMA_BD.md).
+
+> Si cambias algo en `app/datos/componentes.json` cuando la tabla ya tiene datos, edita la fila en Supabase (Table Editor) o vacía la tabla (`DELETE FROM componentes;`) y reinicia la API para que la vuelva a cargar.
+
+## 4b. (Alternativa) Base gratuita en MongoDB Atlas
 
 1. Crea una cuenta en https://www.mongodb.com/cloud/atlas/register.
 2. **Create → Cluster → M0 (Free)**. Elige AWS y una región cercana (ej. `us-east-1`). Nombre: `Cluster0`.
@@ -108,7 +137,7 @@ Cada `git push` a `main` vuelve a publicar la API automáticamente.
 5. **Database → Connect → Drivers → Python**: copia la cadena
    `mongodb+srv://visioncar_api:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
    y cambia `<password>` por la contraseña. Si la contraseña tiene símbolos como `@`, `:` o `/`, genera otra solo con letras y números.
-6. En Render (pestaña **Environment**): `MONGODB_URI=<la cadena>` y `MODO_DEMO=0`. Guarda y Render vuelve a publicar.
+6. En Render (pestaña **Environment**): `MONGODB_URI=<la cadena>`, `MODO_DEMO=0` y **sin** `DATABASE_URL` (si existe, gana PostgreSQL). Guarda y Render vuelve a publicar.
 7. Revisa `/api/v1/health`: debe decir `"base_datos": "ok"`. Los índices se crean solos. Ve el diagrama en [DIAGRAMA.md](DIAGRAMA.md).
 
 ## 5. Conectar el carrito

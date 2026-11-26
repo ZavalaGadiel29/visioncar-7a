@@ -169,6 +169,14 @@ class AgenteDecision:
         self.cfg_carril = config["carril"]
         self.cfg_calidad = config.get("calidad_imagen", {})
         self.roi_carril_y = float(config["carril"]["roi_inicio_y"])   # fracción de la altura
+        # Avance por pasos (config.json -> avance): el PD usa vel_paso como base
+        cfg_avance = config.get("avance", {})
+        self.modo_pasos = str(cfg_avance.get("modo_avance", "continuo")).strip().lower() == "pasos"
+        self.vel_paso = float(cfg_avance.get("vel_paso", 160))
+        # En pasos se decide ~2 veces por segundo (no ~12): el límite de cambio de la
+        # diferencia de ruedas es por PASO, si no el giro tardaría varios pasos en formarse
+        self.max_cambio_pd = (float(cfg_avance.get("max_cambio_por_paso", 100))
+                              if self.modo_pasos else None)
 
         c = self.cfg
         ventana = c["ventana_confirmacion_s"]
@@ -250,6 +258,34 @@ class AgenteDecision:
         if self.direccion_giro is not None and self.giro_fase is not None:
             return self.direccion_giro
         return None
+
+    def descontar_pausa(self, segundos, ahora):
+        """
+        Avance por pasos: el carrito estuvo detenido `segundos` solo por la PARADA
+        del ciclo (no por una regla). Ese tiempo no cuenta para los relojes que
+        dependen de ir avanzando: giro dirigido, preparación, ventanas de
+        bifurcación/avanzar y los "ignorar la misma señal" (si no, por ir más lento
+        se acabarían antes de pasar la señal).
+        """
+        if segundos <= 0:
+            return
+        if self.direccion_giro is not None:
+            if self.giro_fase is not None:
+                self.inicio_giro += segundos
+                self.fin_giro += segundos
+                self.fin_giro_dirigido += segundos
+            elif self.fin_preparacion > 0:
+                self.fin_preparacion += segundos
+        if self.ultimo_giro_activado is not None:
+            clase, t = self.ultimo_giro_activado
+            self.ultimo_giro_activado = (clase, t + segundos)
+        if self.ultimo_avanzar_t is not None:
+            self.ultimo_avanzar_t += segundos
+        if self.ignorar_alto_hasta > ahora:
+            self.ignorar_alto_hasta += segundos
+        for lado, hasta in self.ignorar_giro_hasta.items():
+            if hasta > ahora:
+                self.ignorar_giro_hasta[lado] = hasta + segundos
 
     def preferencia_carril(self, ahora=None):
         """
@@ -858,13 +894,17 @@ class AgenteDecision:
             self.ultimo_error = carril.error
             if carril.prediccion:
                 # solo_linea: la guía no se ve; se sigue la última recta, más despacio
-                base = float(self.cfg_carril.get("velocidad_sin_linea", 115))
+                base = (self.vel_paso if self.modo_pasos
+                        else float(self.cfg_carril.get("velocidad_sin_linea", 115)))
                 vel_izq, vel_der = self.pd.calcular(carril.error, ahora, base=base,
-                                                    angulo=self._angulo_guia(carril))
+                                                    angulo=self._angulo_guia(carril),
+                                                    max_cambio=self.max_cambio_pd)
                 self.ultimo_mover = Comando.mover(vel_izq, vel_der)
                 return self.ultimo_mover, (f"Linea predicha {carril.segundos_sin_linea:.1f} s "
                                            f"(error {carril.error:+.2f}, vel {base:.0f})")
-            vel_izq, vel_der = self.pd.calcular(carril.error, ahora, angulo=self._angulo_guia(carril))
+            base = self.vel_paso if self.modo_pasos else None   # None = velocidad_base
+            vel_izq, vel_der = self.pd.calcular(carril.error, ahora, base=base, angulo=self._angulo_guia(carril),
+                                                max_cambio=self.max_cambio_pd)
             self.ultimo_mover = Comando.mover(vel_izq, vel_der)
             return self.ultimo_mover, f"Siguiendo carril (error {carril.error:+.2f})"
 

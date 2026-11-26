@@ -11,6 +11,12 @@ Programa principal de VisionCar: une todo en el ciclo del agente.
         4. NUBE      -> evento a la API (otro hilo, nunca frena este ciclo)
         5. Pantalla, registro CSV y teclado
 
+Avance (config.json -> avance -> modo_avance):
+    "continuo": como siempre, un comando por cuadro.
+    "pasos":    PARADA (DETENER t_parada_s + cuadro nuevo nitido) -> decidir con
+                ese cuadro -> PASO (MOVER t_paso_s a vel_paso) -> repetir.
+                Ver avance_pasos.py.
+
 Modelos: se corren los dos en cada cuadro. Si con los dos el programa iría
 a menos de yolo.fps_minimo_dos_modelos (12 FPS), YOLO COCO (personas y
 obstáculos) pasa a correr 1 de cada yolo.cada_n_cuadros_si_lento (2) cuadros.
@@ -29,10 +35,11 @@ import time
 
 import cv2
 
+from avance_pasos import FASE_PARADA, FASE_PASO, AvancePorPasos
 from carril import DetectorCarril, pies_en_camino
 from comunicacion import ClienteUDP, Comando
 from configuracion import cargar_config, guardar_config, obtener_clave_udp
-from decision import AgenteDecision, EntradaPercepcion
+from decision import DETENIDO_SEGURIDAD, AgenteDecision, Decision, EntradaPercepcion
 from interfaz import NOMBRE_VENTANA, Calibrador, DatosPantalla, Interfaz
 from nube import ClienteNube
 from percepcion_opencv import ResultadoObstaculos, analizar_obstaculos, evaluar_calidad
@@ -143,6 +150,16 @@ def main():
         print("[MAIN] --sin-motores: NO se mandan comandos UDP al carrito (todo lo demás funciona).")
     cliente.iniciar()
 
+    # Avance por pasos (config.json -> avance -> modo_avance = "pasos")
+    cfg_avance = config.get("avance", {})
+    modo_avance = str(cfg_avance.get("modo_avance", "continuo")).strip().lower()
+    if modo_avance not in ("pasos", "continuo"):
+        raise SystemExit(f"config.json -> avance -> modo_avance debe ser 'pasos' o 'continuo', no '{modo_avance}'.")
+    pasos = AvancePorPasos(cfg_avance, cliente) if modo_avance == "pasos" else None
+    if pasos is not None:
+        print(f"[MAIN] Avance por PASOS: parada {pasos.t_parada:.2f} s + cuadro nuevo "
+              f"(+{pasos.t_asentar:.2f} s), paso {pasos.t_paso:.2f} s a vel_paso {agente.vel_paso:.0f}")
+
     nube = ClienteNube(config["nube"], desactivado=args.sin_nube)
     nube.iniciar()
 
@@ -180,8 +197,35 @@ def main():
             # ==========================================================
             # 1. PERCIBIR
             # ==========================================================
-            cuadro, antiguedad, _ = lector.obtener_cuadro(tiempo_espera=0.2)
+            espera_video = 0.2
+            if pasos is not None:
+                pasos.actualizar(time.monotonic())
+                espera_video = pasos.espera_maxima_cuadro(time.monotonic(), 0.2)
+            cuadro, antiguedad, es_nuevo = lector.obtener_cuadro(tiempo_espera=espera_video)
             inicio_proceso = time.perf_counter()
+            ahora_cuadro = time.monotonic()
+            # Hora (monotonic) en que llegó el cuadro: el lector da su antigüedad
+            t_cuadro = ahora_cuadro - antiguedad if cuadro is not None else None
+
+            # ¿Se decide con este cuadro?
+            #   continuo:     siempre
+            #   pasos/PARADA: solo con un cuadro nuevo tomado ya detenido (ver avance_pasos.py)
+            #   pasos/PASO:   cada cuadro nuevo, pero solo para cortar el paso si hay que detener
+            decidir_ahora = True
+            if pasos is not None:
+                pasos.actualizar(ahora_cuadro)
+                if emergencia and pasos.fase == FASE_PASO:
+                    pasos.detener_ya(ahora_cuadro)
+                if pasos.fase == FASE_PARADA:
+                    decidir_ahora = pasos.cuadro_listo(t_cuadro, ahora_cuadro)
+                    if decidir_ahora:
+                        # La PARADA del ciclo no cuenta para los relojes de maniobras ni de la línea
+                        pausa = pasos.pausa_a_descontar(ahora_cuadro)
+                        if pausa > 0:
+                            agente.descontar_pausa(pausa, ahora_cuadro)
+                            detector_carril.compensar_pausa(pausa)
+                else:
+                    decidir_ahora = es_nuevo
             ms_modelos = 0.0
             p = EntradaPercepcion(ancho_imagen=config["video"]["ancho"], alto_imagen=config["video"]["alto"],
                                   emergencia=emergencia)
@@ -222,7 +266,7 @@ def main():
                 if cuadro_vacio and ultimo_carril is not None:
                     p.carril = ultimo_carril
 
-            if p.video_ok and not cuadro_vacio:
+            if p.video_ok and not cuadro_vacio and decidir_ahora:
                 t0 = time.perf_counter()
                 del_modelo, p.senales_ejecutado = senales.procesar(cuadro)
                 # 'peaton' del modelo propio NO es señal: va aparte (regla de peatón)
@@ -261,13 +305,38 @@ def main():
             # ==========================================================
             # 2. RAZONAR  y  3. ACTUAR
             # ==========================================================
-            if cuadro_vacio:
+            decision_vista = None      # lo que se muestra y registra si no se decidió en este cuadro
+            if not decidir_ahora:
+                # Pasos: aún no hay cuadro válido (PARADA) o es un cuadro repetido (PASO)
+                pasos.mantener_parada()
+                if pasos.fase == FASE_PARADA:
+                    if pasos.sin_cuadro():
+                        texto = (f"PARADA: sin cuadro nuevo en {pasos.esperando_cuadro_s:.1f} s, "
+                                 f"detenido (no avanzo a ciegas)")
+                    else:
+                        texto = "PARADA: esperando un cuadro nuevo tomado ya detenido"
+                else:
+                    texto = f"PASO {pasos.comando_paso}"
+                if decision is None:
+                    decision_vista = Decision(Comando.detener(), DETENIDO_SEGURIDAD, texto, 0, "detener")
+                else:
+                    decision_vista = dataclasses.replace(decision, motivo=f"{texto} | {decision.motivo}")
+            elif cuadro_vacio:
                 # Cuadro negro/vacío: NO se decide nada; el hilo UDP sigue mandando el último comando
+                # (en pasos: en PARADA sigue detenido; en PASO el pulso termina solo)
+                if pasos is not None:
+                    pasos.mantener_parada()
                 decision = dataclasses.replace(
                     decision, motivo=f"Cuadro vacio (brillo {brillo:.0f}): repito el ultimo comando")
             else:
                 decision = agente.decidir(p)
-                cliente.establecer_comando(decision.comando)   # con --sin-motores no sale nada por UDP
+                # con --sin-motores no sale nada por UDP
+                if pasos is None:
+                    cliente.establecer_comando(decision.comando)
+                elif pasos.fase == FASE_PARADA:
+                    pasos.aplicar_decision(decision, t_cuadro, time.monotonic())
+                else:
+                    pasos.revisar_seguridad(decision, time.monotonic())
 
                 # ==========================================================
                 # 4. NUBE (solo se encola; el hilo de la nube hace el resto)
@@ -284,9 +353,14 @@ def main():
             if dt > 0:
                 fps = 0.9 * fps + 0.1 * (1.0 / dt) if fps > 0 else 1.0 / dt
             latencia = cliente.latencia_promedio_ms
+            if decision_vista is None:
+                decision_vista = decision
+            if pasos is not None:
+                pasos.actualizar(time.monotonic())    # la fase real en este instante (el pulso pudo terminar)
+            fase_avance = "CONTINUO" if pasos is None else pasos.fase
 
             datos = DatosPantalla(
-                decision=decision, detecciones=todas_detecciones, senales=p.senales,
+                decision=decision_vista, detecciones=todas_detecciones, senales=p.senales,
                 senal_vista=agente.senal_vista, senal_confirmada=agente.senal_confirmada,
                 modelo_senales=senales.mensaje, modelo_senales_ok=senales.disponible,
                 carril=p.carril, obstaculos=obstaculos, zonas_ocupadas=agente.zonas_ocupadas,
@@ -300,8 +374,10 @@ def main():
                 altura_activacion=config["decision"]["altura_activacion_senal"],
                 personas_cada_n=yolo.cada_n if yolo is not None else 0, fps_estimado=fps_estimado,
                 aviso=aviso_calibracion if ahora < aviso_hasta else "",
-                ajuste=texto_ajuste(config["carril"], agente.pd, decision) if mostrar_ajuste else None,
+                ajuste=texto_ajuste(config["carril"], agente.pd, decision_vista) if mostrar_ajuste else None,
                 debug_guia=debug_guia,
+                avance=pasos.texto() if pasos is not None else "",
+                fase_avance=fase_avance if pasos is not None else "",
             )
             interfaz.mostrar(cuadro if p.video_ok else None, datos)
             calibrador.leer()
@@ -309,7 +385,8 @@ def main():
 
             if registro is not None:
                 vista = agente.senal_vista
-                cmd = decision.comando
+                cmd = decision_vista.comando
+                enviado = cliente.comando_actual
                 if cmd.nombre == "MOVER":
                     ruedas = (f"{cmd.p1:.0f}", f"{cmd.p2:.0f}")
                 elif cmd.nombre == "DETENER":
@@ -321,14 +398,16 @@ def main():
                     "tiempo_s": f"{ahora - inicio:.3f}",
                     "fps": f"{fps:.2f}",
                     "latencia_ms": "" if latencia is None else f"{latencia:.1f}",
-                    "estado": decision.estado,
-                    "comando": str(decision.comando),
-                    "accion_nube": decision.accion_nube,
-                    "modo": decision.modo,
-                    "motivo": decision.motivo,
-                    "regla": decision.regla,
-                    "senal": decision.senal,
-                    "confianza": f"{decision.confianza:.3f}",
+                    "estado": decision_vista.estado,
+                    "comando": str(decision_vista.comando),
+                    "comando_enviado": str(enviado),
+                    "fase": fase_avance,
+                    "accion_nube": decision_vista.accion_nube,
+                    "modo": decision_vista.modo,
+                    "motivo": decision_vista.motivo,
+                    "regla": decision_vista.regla,
+                    "senal": decision_vista.senal,
+                    "confianza": f"{decision_vista.confianza:.3f}",
                     "senal_vista": vista.clase if vista else "",
                     "conf_vista": f"{vista.confianza:.3f}" if vista else "",
                     "carril_ok": int(p.carril.detectado),

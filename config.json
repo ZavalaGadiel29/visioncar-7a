@@ -273,6 +273,15 @@
     "tiempo_max_busqueda_s": 4.0,
     "diferencia_reporte_giro": 120
   },
+  "avance": {
+    "modo_avance": "pasos",
+    "t_parada_s": 0.2,
+    "t_asentar_s": 0.08,
+    "t_paso_s": 0.25,
+    "vel_paso": 160,
+    "max_cambio_por_paso": 100,
+    "max_espera_cuadro_s": 0.6
+  },
   "velocidades": {
     "AVANZAR": 160,
     "GIRAR_IZQ": 150,

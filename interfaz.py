@@ -147,6 +147,8 @@ class DatosPantalla:
     aviso: str = ""                         # mensaje temporal (resultado de calibrar con C)
     ajuste: object = None                   # tecla K: líneas con kp, kd, suavizado, dif. ruedas
     debug_guia: bool = False                # tecla D: candidatos a guion y por qué se aceptan/rechazan
+    avance: str = ""                        # modo pasos: "PASOS  PARADA" / "PASOS  PASO ..." ("" = continuo)
+    fase_avance: str = ""                   # "PARADA" / "PASO" ("" = continuo)
 
 
 class Interfaz:
@@ -293,6 +295,14 @@ class Interfaz:
                         COLOR_ACCION.get(d.accion_nube, BLANCO), 2)
         if datos.sin_auto:
             poner_texto(vista, "SIN MOTORES", ancho - 150, alto - 12, 0.6, AMARILLO, 2)
+        # Avance por pasos: modo y fase arriba a la derecha (PARADA naranja, PASO verde)
+        if datos.fase_avance:
+            etiqueta = f"PASOS  {datos.fase_avance}"
+            (tw, th), _ = cv2.getTextSize(etiqueta, FUENTE, 0.7, 2)
+            xt = ancho - tw - 12
+            color = VERDE if datos.fase_avance == "PASO" else NARANJA
+            cv2.rectangle(vista, (xt - 6, 6), (ancho - 6, 14 + th), (0, 0, 0), cv2.FILLED)
+            poner_texto(vista, etiqueta, xt, 10 + th, 0.7, color, 2)
 
         # Detenido por obstáculo: se marca el "camino" (zona CENTRO dentro del ROI del carril)
         if d is not None and d.estado == "DETENIDO_OBSTACULO":
@@ -418,6 +428,10 @@ class Interfaz:
         y = self._separador(panel, y)
 
         # --- Rendimiento y carrito ---
+        if datos.avance:
+            poner_texto(panel, f"Avance: {datos.avance}"[:44], m, y, 0.45,
+                        VERDE if datos.fase_avance == "PASO" else NARANJA)
+            y += 18
         poner_texto(panel, f"FPS: {datos.fps:5.1f}", m, y, 0.5)
 
         if datos.sin_auto:

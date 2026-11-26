@@ -17,6 +17,7 @@ COLUMNAS = [
     "zona_izq", "zona_centro", "zona_der", "nube_ok", "pendientes",
     "senal_activa", "personas_cada_n", "memoria_linea",
     "angulo_linea", "termino_i", "rueda_izq", "rueda_der",
+    "fase", "comando_enviado",
 ]
 
 

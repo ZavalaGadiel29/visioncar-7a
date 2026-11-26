@@ -17,6 +17,10 @@ Ideas clave:
 - Vigilante (watchdog): si el ciclo de visión deja de dar comandos nuevos
   (programa trabado), este hilo manda DETENER en lugar de repetir el último
   comando para siempre.
+- Pulso (modo "avance por pasos"): pulso(comando, duracion) manda el
+  comando YA y, justo al cumplirse la duración, este hilo manda DETENER
+  él mismo (sin esperar al ciclo de visión). Así el paso dura lo pedido
+  aunque el ciclo de visión vaya lento.
 - SEQ empieza en 1 y siempre aumenta. La hora de envío de cada SEQ se
   guarda y, cuando llega su ACK, la diferencia es la LATENCIA (ida y vuelta).
 """
@@ -83,6 +87,9 @@ class ClienteUDP:
         self._hora_comando = time.monotonic()  # cuándo lo actualizó el ciclo principal
         self._seq = 0
         self._pendientes = {}                  # seq -> hora de envío (esperando ACK)
+        self._despertar = threading.Event()   # para mandar ya (sin esperar los 100 ms)
+        self._fin_pulso = None                 # monotonic en que termina el pulso en curso
+        self.fin_ultimo_pulso = None           # monotonic en que se mandó el DETENER del último pulso
         self._latencias = deque(maxlen=int(cfg_comunicacion["muestras_promedio_latencia"]))
 
         self.pausado = False      # tecla P: deja de enviar (prueba del fail-safe del carrito)
@@ -106,11 +113,37 @@ class ClienteUDP:
         if not self.simulado:
             threading.Thread(target=self._bucle_recepcion, daemon=True).start()
 
-    def establecer_comando(self, comando):
-        """El programa principal llama esto en cada cuadro con el comando elegido."""
+    def establecer_comando(self, comando, inmediato=False):
+        """
+        El programa principal llama esto en cada cuadro con el comando elegido.
+        Cancela un pulso en curso. inmediato=True: se envía ya (no en el próximo tick).
+        """
         with self._candado:
             self._comando = comando
             self._hora_comando = time.monotonic()
+            self._fin_pulso = None
+        if inmediato:
+            self._despertar.set()
+
+    def pulso(self, comando, duracion):
+        """Manda `comando` ya y DETENER al cumplirse `duracion` segundos (lo hace este hilo)."""
+        with self._candado:
+            ahora = time.monotonic()
+            self._comando = comando
+            self._hora_comando = ahora
+            self._fin_pulso = ahora + max(0.0, float(duracion))
+        self._despertar.set()
+
+    @property
+    def comando_actual(self):
+        """El comando que se está mandando ahora (para el registro)."""
+        with self._candado:
+            return self._comando
+
+    @property
+    def pulso_activo(self):
+        with self._candado:
+            return self._fin_pulso is not None
 
     @property
     def latencia_promedio_ms(self):
@@ -147,11 +180,22 @@ class ClienteUDP:
 
     def _bucle_envio(self):
         maximo_sin_decision = float(self.cfg.get("max_sin_decision_s", 0.5))
+        intervalo = float(self.cfg["intervalo_envio_s"])
         while self._activo:
+            espera = intervalo
             if not self.pausado:
                 with self._candado:
+                    ahora = time.monotonic()
+                    if self._fin_pulso is not None and ahora >= self._fin_pulso:
+                        # Fin del pulso: DETENER exacto, sin esperar al ciclo de visión
+                        self._comando = Comando.detener()
+                        self._hora_comando = ahora
+                        self._fin_pulso = None
+                        self.fin_ultimo_pulso = ahora
+                    if self._fin_pulso is not None:
+                        espera = min(intervalo, max(0.0, self._fin_pulso - ahora))
                     comando = self._comando
-                    edad = time.monotonic() - self._hora_comando
+                    edad = ahora - self._hora_comando
                 # Vigilante: si el ciclo de visión se trabó, no repetir un
                 # comando viejo; mejor detener el carrito.
                 self.vigilante_activo = edad > maximo_sin_decision
@@ -159,7 +203,9 @@ class ClienteUDP:
                     comando = Comando.detener()
                 self._enviar(comando)
             self._limpiar_pendientes()
-            time.sleep(self.cfg["intervalo_envio_s"])
+            # Espera el intervalo normal, o menos si hay que cortar un pulso o mandar ya
+            self._despertar.wait(timeout=espera)
+            self._despertar.clear()
 
     def _limpiar_pendientes(self):
         """Los SEQ que no recibieron ACK a tiempo se cuentan como perdidos."""

@@ -1154,10 +1154,12 @@ class ControlPD:
         self.termino_i = 0.0
         self.modo_giro = "normal"
 
-    def calcular(self, error, ahora, base=None, angulo=0.0):
+    def calcular(self, error, ahora, base=None, angulo=0.0, max_cambio=None):
         """
         base: velocidad base distinta a velocidad_base (ej. velocidad_sin_linea).
         angulo: ángulo de la recta de la guía (rad), solo en LINEA / LINEA-PRED.
+        max_cambio: límite de cambio de la diferencia por cálculo distinto a
+            max_cambio_por_cuadro (avance por pasos: avance.max_cambio_por_paso).
         """
         cfg = self.cfg
         alpha = float(np.clip(cfg.get("suavizado_error", 1.0), 0.01, 1.0))
@@ -1201,7 +1203,9 @@ class ControlPD:
         else:
             self.modo_giro = "normal"
             max_dif = float(cfg.get("max_diferencia_ruedas", 1000))
-        max_cambio = float(cfg.get("max_cambio_por_cuadro", 1000))
+        if max_cambio is None:
+            max_cambio = cfg.get("max_cambio_por_cuadro", 1000)
+        max_cambio = float(max_cambio)
         diferencia = float(np.clip(2.0 * correccion, -max_dif, max_dif))
         diferencia = float(np.clip(diferencia, self._diferencia_previa - max_cambio,
                                    self._diferencia_previa + max_cambio))

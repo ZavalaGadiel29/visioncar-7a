@@ -1,7 +1,6 @@
-Copia aquí el modelo de señales entrenado con el nombre best.pt
-(clases: alto, avanzar, izquierda, derecha).
+Modelo de señales entrenado: best.pt (YOLOv8n, imgsz=320).
+Clases: {0: 'alto', 1: 'avanzar', 2: 'derecha', 3: 'izquierda'}.
+Son los mismos nombres del contrato de la API: main.py los usa tal cual.
 
-Mientras no exista modelo/best.pt el programa funciona igual:
-sigue el carril, detecta personas y obstáculos y registra senal "ninguna".
-Si tus clases se llaman distinto (p. ej. "stop", "left"), tradúcelas en
-config.json -> senales -> clases, por ejemplo: "stop": "alto".
+Si algún día falta best.pt, el programa funciona igual: sigue el carril,
+detecta personas y registra senal "ninguna".

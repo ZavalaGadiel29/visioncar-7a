@@ -12,9 +12,11 @@ from datetime import datetime
 COLUMNAS = [
     "tiempo_s", "fps", "latencia_ms", "estado", "comando", "accion_nube", "modo",
     "motivo", "regla", "senal", "confianza", "senal_vista", "conf_vista",
-    "carril_ok", "error_carril", "emergencia", "video_ok", "brillo", "nitidez",
+    "carril_ok", "error_carril", "modo_carril", "emergencia", "video_ok", "brillo", "nitidez",
     "yolo_ejecutado", "senales_ejecutado", "num_detecciones", "detecciones",
     "zona_izq", "zona_centro", "zona_der", "nube_ok", "pendientes",
+    "senal_activa", "personas_cada_n", "memoria_linea",
+    "angulo_linea", "termino_i", "rueda_izq", "rueda_der",
 ]
 
 
